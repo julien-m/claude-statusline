@@ -15,6 +15,7 @@ import { getGitStatus } from "./lib/git";
 import {
 	renderStatusline,
 	type StatuslineData,
+	type TokenBreakdownData,
 	type UsageLimit,
 } from "./lib/render-pure";
 import type { HookInput } from "./lib/types";
@@ -26,6 +27,7 @@ let getPeriodCost: any = null;
 let getTodayCostV2: any = null;
 let getWeekCost: any = null;
 let saveSessionV2: any = null;
+let getDailyTokens: any = null;
 
 try {
 	const limitsModule = await import("./lib/features/limits");
@@ -48,6 +50,7 @@ try {
 	getTodayCostV2 = spendModule.getTodayCostV2;
 	getWeekCost = spendModule.getWeekCost;
 	saveSessionV2 = spendModule.saveSessionV2;
+	getDailyTokens = spendModule.getDailyTokens;
 } catch {
 	// Spend tracking feature not available - that's OK!
 }
@@ -170,6 +173,17 @@ async function main() {
 			weekCost = getWeekCost(usageLimits.seven_day.resets_at);
 		}
 
+		// Token breakdown — fetch from DB and check freshness
+		const STALE_THRESHOLD_MS = 3 * 60 * 1000; // 3 min = 3× cron interval
+		const today = new Date().toISOString().slice(0, 10); // UTC — consistent with sessions table and ccusage
+		let tokenBreakdown: TokenBreakdownData | null = null;
+		if (getDailyTokens && config.tokenBreakdown?.enabled) {
+			const rawTokens = getDailyTokens(today);
+			if (rawTokens && Date.now() - new Date(rawTokens.updatedAt).getTime() < STALE_THRESHOLD_MS) {
+				tokenBreakdown = rawTokens;
+			}
+		}
+
 		const data: StatuslineData = {
 			branch: formatBranch(git, config.git),
 			dirPath: formatPath(input.workspace.current_dir, config.pathDisplayMode),
@@ -200,6 +214,7 @@ async function main() {
 			}),
 			...((getPeriodCost || getTodayCostV2) && { periodCost, todayCost }),
 			...(getWeekCost && { weekCost }),
+			...(getDailyTokens && { tokenBreakdown }),
 		};
 
 		const output = renderStatusline(data, config);
