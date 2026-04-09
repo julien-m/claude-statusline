@@ -1,5 +1,5 @@
-import { $ } from "bun";
 import { platform } from "node:os";
+import { $ } from "bun";
 
 export interface UsageLimitData {
 	utilization: number;
@@ -52,20 +52,17 @@ export async function getUsageLimits(): Promise<UsageLimitsResult> {
 		const token = await getOAuthToken();
 		if (!token) return { five_hour: null, seven_day: null };
 
-		const response = await fetch(
-			"https://api.anthropic.com/api/oauth/usage",
-			{
-				method: "GET",
-				headers: {
-					Accept: "application/json, text/plain, */*",
-					"Content-Type": "application/json",
-					"User-Agent": "claude-code/2.0.31",
-					Authorization: `Bearer ${token}`,
-					"anthropic-beta": "oauth-2025-04-20",
-					"Accept-Encoding": "gzip, compress, deflate, br",
-				},
+		const response = await fetch("https://api.anthropic.com/api/oauth/usage", {
+			method: "GET",
+			headers: {
+				Accept: "application/json, text/plain, */*",
+				"Content-Type": "application/json",
+				"User-Agent": "claude-code/2.0.31",
+				Authorization: `Bearer ${token}`,
+				"anthropic-beta": "oauth-2025-04-20",
+				"Accept-Encoding": "gzip, compress, deflate, br",
 			},
-		);
+		});
 
 		if (!response.ok) return { five_hour: null, seven_day: null };
 

@@ -111,10 +111,9 @@ export function saveSessionV2(input: HookInput, resetsAt?: string): void {
 
 		// Upsert session
 		const existing = db
-			.query<
-				{ total_cost: number; last_resets_at: string | null },
-				[string]
-			>("SELECT total_cost, last_resets_at FROM sessions WHERE session_id = ?")
+			.query<{ total_cost: number; last_resets_at: string | null }, [string]>(
+				"SELECT total_cost, last_resets_at FROM sessions WHERE session_id = ?",
+			)
 			.get(sessionId);
 
 		if (!existing) {
@@ -215,7 +214,9 @@ export function getPeriodCost(periodId: string): number {
 export function getWeekCost(sevenDayResetsAt: string): number {
 	try {
 		const db = getDb();
-		const windowStart = new Date(new Date(sevenDayResetsAt).getTime() - 7 * 24 * 3600 * 1000);
+		const windowStart = new Date(
+			new Date(sevenDayResetsAt).getTime() - 7 * 24 * 3600 * 1000,
+		);
 		const windowStartDate = windowStart.toISOString().split("T")[0];
 		const result = db
 			.query<{ total: number }, [string]>(

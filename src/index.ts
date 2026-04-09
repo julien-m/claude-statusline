@@ -1,21 +1,16 @@
 #!/usr/bin/env bun
 
-import { readFile, writeFile } from "node:fs/promises";
+import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { getContextData } from "./lib/context";
-import {
-	colors,
-	formatCost,
-	formatDuration,
-	formatPath,
-} from "./lib/formatters";
+import { colors, formatPath } from "./lib/formatters";
 import type { GitStatus } from "./lib/git";
 import { getGitStatus } from "./lib/git";
 import {
-	renderStatusline,
-	renderStatuslineRaw,
 	type RawGitData,
 	type RawStatuslineData,
+	renderStatusline,
+	renderStatuslineRaw,
 	type StatuslineData,
 	type TokenBreakdownData,
 	type UsageLimit,
@@ -110,13 +105,17 @@ async function main() {
 				five_hour: input.rate_limits.five_hour
 					? {
 							utilization: input.rate_limits.five_hour.used_percentage,
-							resets_at: new Date(input.rate_limits.five_hour.resets_at * 1000).toISOString(),
+							resets_at: new Date(
+								input.rate_limits.five_hour.resets_at * 1000,
+							).toISOString(),
 						}
 					: null,
 				seven_day: input.rate_limits.seven_day
 					? {
 							utilization: input.rate_limits.seven_day.used_percentage,
-							resets_at: new Date(input.rate_limits.seven_day.resets_at * 1000).toISOString(),
+							resets_at: new Date(
+								input.rate_limits.seven_day.resets_at * 1000,
+							).toISOString(),
 						}
 					: null,
 			};

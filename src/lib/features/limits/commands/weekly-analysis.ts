@@ -66,9 +66,7 @@ async function main() {
 
 	if (!limits.five_hour && !limits.seven_day) {
 		console.log(
-			pico.red(
-				"Could not fetch usage data. Check your OAuth token.\n",
-			),
+			pico.red("Could not fetch usage data. Check your OAuth token.\n"),
 		);
 		return;
 	}
@@ -80,18 +78,18 @@ async function main() {
 		console.log(`  ${progressBar(fh.utilization)} ${fh.utilization}%`);
 
 		if (fh.resets_at) {
-			const delta = pacingDelta(fh.utilization, fh.resets_at, FIVE_HOUR_MINUTES);
+			const delta = pacingDelta(
+				fh.utilization,
+				fh.resets_at,
+				FIVE_HOUR_MINUTES,
+			);
 			console.log(`  Resets in: ${pico.cyan(formatResetTime(fh.resets_at))}`);
 			console.log(`  Pacing:   ${formatDelta(delta)}`);
 
 			if (delta > 10) {
-				console.log(
-					pico.red("  ⚠ Above pace — consider slowing down"),
-				);
+				console.log(pico.red("  ⚠ Above pace — consider slowing down"));
 			} else if (delta < -20) {
-				console.log(
-					pico.green("  ✓ Well below pace — plenty of headroom"),
-				);
+				console.log(pico.green("  ✓ Well below pace — plenty of headroom"));
 			}
 		}
 		console.log("");

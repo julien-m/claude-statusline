@@ -1,7 +1,12 @@
 import { describe, expect, it } from "bun:test";
-import { renderStatuslineRaw, type RawStatuslineData } from "../src/lib/render-pure";
+import {
+	type RawStatuslineData,
+	renderStatuslineRaw,
+} from "../src/lib/render-pure";
 
-function buildData(overrides: Partial<RawStatuslineData> = {}): RawStatuslineData {
+function buildData(
+	overrides: Partial<RawStatuslineData> = {},
+): RawStatuslineData {
 	return {
 		git: {
 			branch: "main",
@@ -45,14 +50,16 @@ describe("renderStatuslineRaw", () => {
 
 	describe("git status", () => {
 		it("shows branch name with dirty indicator when there are changes", () => {
-			const output = renderStatuslineRaw(buildData({
-				git: {
-					branch: "feat/my-branch",
-					dirty: true,
-					staged: { files: 1, added: 10, deleted: 2 },
-					unstaged: { files: 0, added: 0, deleted: 0 },
-				},
-			}));
+			const output = renderStatuslineRaw(
+				buildData({
+					git: {
+						branch: "feat/my-branch",
+						dirty: true,
+						staged: { files: 1, added: 10, deleted: 2 },
+						unstaged: { files: 0, added: 0, deleted: 0 },
+					},
+				}),
+			);
 			expect(output).toContain("feat/my-branch");
 		});
 
@@ -64,24 +71,30 @@ describe("renderStatuslineRaw", () => {
 
 	describe("context usage", () => {
 		it("includes context percentage in output", () => {
-			const output = renderStatuslineRaw(buildData({ contextPercentage: 45, contextTokens: 90000 }));
+			const output = renderStatuslineRaw(
+				buildData({ contextPercentage: 45, contextTokens: 90000 }),
+			);
 			expect(output).toContain("45");
 		});
 
 		it("handles null context tokens gracefully", () => {
-			const output = renderStatuslineRaw(buildData({ contextTokens: null, contextPercentage: null }));
+			const output = renderStatuslineRaw(
+				buildData({ contextTokens: null, contextPercentage: null }),
+			);
 			expect(typeof output).toBe("string");
 		});
 	});
 
 	describe("usage limits", () => {
 		it("includes limit utilization when provided", () => {
-			const output = renderStatuslineRaw(buildData({
-				usageLimits: {
-					five_hour: { utilization: 50, resets_at: "2025-01-01T15:00:00Z" },
-					seven_day: null,
-				},
-			}));
+			const output = renderStatuslineRaw(
+				buildData({
+					usageLimits: {
+						five_hour: { utilization: 50, resets_at: "2025-01-01T15:00:00Z" },
+						seven_day: null,
+					},
+				}),
+			);
 			expect(output).toContain("50");
 		});
 

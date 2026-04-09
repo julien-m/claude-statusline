@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 
-import { table } from "table";
 import pc from "picocolors";
+import { table } from "table";
 import { getDb } from "../index";
 
 const pico = pc.createColors(true);
@@ -51,9 +51,7 @@ function main() {
 			`$${s.total_cost.toFixed(2)}`,
 			`${mins}m`,
 			s.lines_added > 0 ? pico.green(`+${s.lines_added}`) : pico.gray("-"),
-			s.lines_removed > 0
-				? pico.red(`-${s.lines_removed}`)
-				: pico.gray("-"),
+			s.lines_removed > 0 ? pico.red(`-${s.lines_removed}`) : pico.gray("-"),
 		];
 	});
 

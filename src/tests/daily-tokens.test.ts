@@ -1,11 +1,11 @@
 import { Database } from "bun:sqlite";
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import {
+	type DailyTokensRow,
 	getDailyTokens,
 	resetDb,
 	setDb,
 	upsertDailyTokens,
-	type DailyTokensRow,
 } from "../lib/features/spend/index";
 
 function buildRow(overrides: Partial<DailyTokensRow> = {}): DailyTokensRow {

@@ -70,14 +70,28 @@ async function main(): Promise<void> {
 		.replace(/-/g, "");
 
 	// Fetch daily tokens for today
-	const dailyRaw = await runCcusage(["daily", "--since", today, "--until", today, "--json", "--offline"]);
+	const dailyRaw = await runCcusage([
+		"daily",
+		"--since",
+		today,
+		"--until",
+		today,
+		"--json",
+		"--offline",
+	]);
 	if (!isCcusageDailyResponse(dailyRaw)) {
 		throw new Error("Unexpected ccusage daily response format");
 	}
 	const dailyResponse: CcusageDailyResponse = dailyRaw;
 
 	// Fetch blocks since yesterday to catch cross-midnight active blocks
-	const blocksRaw = await runCcusage(["blocks", "--since", yesterday, "--json", "--offline"]);
+	const blocksRaw = await runCcusage([
+		"blocks",
+		"--since",
+		yesterday,
+		"--json",
+		"--offline",
+	]);
 	if (!isCcusageBlocksResponse(blocksRaw)) {
 		throw new Error("Unexpected ccusage blocks response format");
 	}
@@ -95,7 +109,9 @@ async function main(): Promise<void> {
 		cacheCreationTokens: dailyResponse.totals.cacheCreationTokens,
 		cacheReadTokens: dailyResponse.totals.cacheReadTokens,
 		blockCost: activeBlock?.costUSD ?? 0,
-		blockRemainingMin: Math.floor(activeBlock?.projection?.remainingMinutes ?? 0),
+		blockRemainingMin: Math.floor(
+			activeBlock?.projection?.remainingMinutes ?? 0,
+		),
 		blockProjectionCost: activeBlock?.projection?.totalCost ?? 0,
 		burnRatePerHour: activeBlock?.burnRate?.costPerHour ?? 0,
 		totalCost: dailyResponse.totals.totalCost,

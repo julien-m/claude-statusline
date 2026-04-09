@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 
-import { table } from "table";
 import pc from "picocolors";
+import { table } from "table";
 import { getDb } from "../index";
 
 const pico = pc.createColors(true);
@@ -10,16 +10,19 @@ function main() {
 	const db = getDb();
 
 	const projects = db
-		.query<{
-			cwd: string;
-			total_cost: number;
-			session_count: number;
-			total_duration: number;
-			total_added: number;
-			total_removed: number;
-			first_date: string;
-			last_date: string;
-		}>(
+		.query<
+			{
+				cwd: string;
+				total_cost: number;
+				session_count: number;
+				total_duration: number;
+				total_added: number;
+				total_removed: number;
+				first_date: string;
+				last_date: string;
+			},
+			[]
+		>(
 			`SELECT cwd,
 				SUM(total_cost) as total_cost,
 				COUNT(*) as session_count,
@@ -50,7 +53,10 @@ function main() {
 		last_date: string;
 	};
 
-	const grandTotal = projects.reduce((sum: number, p: ProjectRow) => sum + p.total_cost, 0);
+	const grandTotal = projects.reduce(
+		(sum: number, p: ProjectRow) => sum + p.total_cost,
+		0,
+	);
 
 	console.log(
 		pico.bold(
@@ -73,9 +79,7 @@ function main() {
 			`${p.session_count}`,
 			durationStr,
 			p.total_added > 0 ? pico.green(`+${p.total_added}`) : pico.gray("-"),
-			p.total_removed > 0
-				? pico.red(`-${p.total_removed}`)
-				: pico.gray("-"),
+			p.total_removed > 0 ? pico.red(`-${p.total_removed}`) : pico.gray("-"),
 			pico.gray(`${p.first_date} → ${p.last_date}`),
 		];
 	});

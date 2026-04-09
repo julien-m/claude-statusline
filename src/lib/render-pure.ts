@@ -27,11 +27,10 @@ const TOKEN_PRICES = {
 	input: 3,
 	output: 15,
 	cacheWrite: 3.75,
-	cacheRead: 0.30,
+	cacheRead: 0.3,
 } as const;
 
 const WEEKLY_HOURS = 168; // 7 days * 24 hours
-const FIVE_HOUR_MINUTES = 300; // 5 hours * 60 minutes
 
 // ─────────────────────────────────────────────────────────────
 // RAW DATA TYPES - No pre-formatting, just raw values
@@ -136,8 +135,10 @@ function formatGitPart(git: RawGitData | null): string {
 	const totalDeleted = git.staged.deleted + git.unstaged.deleted;
 	if (totalAdded > 0) changeParts.push(colors.green(`+${totalAdded}`));
 	if (totalDeleted > 0) changeParts.push(colors.red(`-${totalDeleted}`));
-	if (git.staged.files > 0) changeParts.push(colors.gray(`~${git.staged.files}`));
-	if (git.unstaged.files > 0) changeParts.push(colors.yellow(`~${git.unstaged.files}`));
+	if (git.staged.files > 0)
+		changeParts.push(colors.gray(`~${git.staged.files}`));
+	if (git.unstaged.files > 0)
+		changeParts.push(colors.yellow(`~${git.unstaged.files}`));
 
 	if (changeParts.length > 0) parts.push(changeParts.join(" "));
 
@@ -156,7 +157,9 @@ function formatSessionPart(
 
 	const items: string[] = [];
 
-	items.push(`${colors.gray("$")}${colors.dimWhite(formatCost(cost, COST_FORMAT))}`);
+	items.push(
+		`${colors.gray("$")}${colors.dimWhite(formatCost(cost, COST_FORMAT))}`,
+	);
 	items.push(formatTokens(contextTokens, false));
 
 	const bar = formatProgressBar({
@@ -166,7 +169,9 @@ function formatSessionPart(
 		colorMode: "progressive",
 		background: "none",
 	});
-	items.push(`${bar} ${colors.lightGray(contextPercentage.toString())}${colors.gray("%")}`);
+	items.push(
+		`${bar} ${colors.lightGray(contextPercentage.toString())}${colors.gray("%")}`,
+	);
 
 	items.push(colors.gray(`(${formatDuration(durationMs)})`));
 
@@ -246,7 +251,10 @@ function formatWeeklyPart(
 	parts.push(`${pctColor(sevenDay.utilization.toString())}${colors.gray("%")}`);
 
 	if (sevenDay.resets_at) {
-		const delta = calculateWeeklyDelta(sevenDay.utilization, sevenDay.resets_at);
+		const delta = calculateWeeklyDelta(
+			sevenDay.utilization,
+			sevenDay.resets_at,
+		);
 		parts.push(
 			`${colors.gray("(")}${formatPacingDelta(delta)}${colors.gray(")")}`,
 		);
@@ -262,7 +270,11 @@ function formatDailyPart(todayCost: number): string {
 	return `${colors.gray("D:")} ${colors.gray("$")}${colors.dimWhite(formatCost(todayCost, COST_FORMAT))}`;
 }
 
-function tokenCostPct(tokens: number, pricePerMTok: number, totalCost: number): number {
+function tokenCostPct(
+	tokens: number,
+	pricePerMTok: number,
+	totalCost: number,
+): number {
 	if (totalCost <= 0) return 0;
 	return Math.round(((tokens * pricePerMTok) / 1_000_000 / totalCost) * 100);
 }
@@ -272,16 +284,34 @@ function formatTokenBreakdownPart(
 ): string {
 	if (!data || data.totalCost <= 0) return "";
 
-	const inPct = tokenCostPct(data.inputTokens, TOKEN_PRICES.input, data.totalCost);
-	const outPct = tokenCostPct(data.outputTokens, TOKEN_PRICES.output, data.totalCost);
-	const cwPct = tokenCostPct(data.cacheCreationTokens, TOKEN_PRICES.cacheWrite, data.totalCost);
-	const crPct = tokenCostPct(data.cacheReadTokens, TOKEN_PRICES.cacheRead, data.totalCost);
+	const inPct = tokenCostPct(
+		data.inputTokens,
+		TOKEN_PRICES.input,
+		data.totalCost,
+	);
+	const outPct = tokenCostPct(
+		data.outputTokens,
+		TOKEN_PRICES.output,
+		data.totalCost,
+	);
+	const cwPct = tokenCostPct(
+		data.cacheCreationTokens,
+		TOKEN_PRICES.cacheWrite,
+		data.totalCost,
+	);
+	const crPct = tokenCostPct(
+		data.cacheReadTokens,
+		TOKEN_PRICES.cacheRead,
+		data.totalCost,
+	);
 
 	const breakdownStr = `in:${inPct}% out:${outPct}% cw:${cwPct}% cr:${crPct}%`;
 	const parts = [breakdownStr];
 
 	if (data.burnRatePerHour > 0) {
-		parts.push(`🔥 $${data.burnRatePerHour.toFixed(1)}/h → $${data.blockProjectionCost.toFixed(0)}`);
+		parts.push(
+			`🔥 $${data.burnRatePerHour.toFixed(1)}/h → $${data.blockProjectionCost.toFixed(0)}`,
+		);
 	}
 
 	return `${colors.gray("T:")} ${parts.join(` ${colors.gray("·")} `)}`;

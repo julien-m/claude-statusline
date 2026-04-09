@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 
-import { table } from "table";
 import pc from "picocolors";
+import { table } from "table";
 import { getDb } from "../index";
 
 const pico = pc.createColors(true);
@@ -43,9 +43,17 @@ function main() {
 		return;
 	}
 
-	type DailyRow = { date: string; total_cost: number; session_count: number; total_duration: number };
+	type DailyRow = {
+		date: string;
+		total_cost: number;
+		session_count: number;
+		total_duration: number;
+	};
 
-	const totalCost = dailyData.reduce((sum: number, d: DailyRow) => sum + d.total_cost, 0);
+	const totalCost = dailyData.reduce(
+		(sum: number, d: DailyRow) => sum + d.total_cost,
+		0,
+	);
 	const totalSessions = dailyData.reduce(
 		(sum: number, d: DailyRow) => sum + d.session_count,
 		0,
@@ -56,10 +64,9 @@ function main() {
 	);
 
 	const rows = dailyData.map((d: DailyRow) => {
-		const dayOfWeek = new Date(`${d.date}T12:00:00`).toLocaleString(
-			"default",
-			{ weekday: "short" },
-		);
+		const dayOfWeek = new Date(`${d.date}T12:00:00`).toLocaleString("default", {
+			weekday: "short",
+		});
 		const mins = Math.floor(d.total_duration / 60000);
 		const hours = Math.floor(mins / 60);
 		const m = mins % 60;
