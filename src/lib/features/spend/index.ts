@@ -17,6 +17,7 @@ export interface DailyTokensRow {
 	updatedAt: string;
 }
 
+// data/ is at project root: src/lib/features/spend/ is 4 levels deep → ../../../../data/
 const DATA_DIR = join(import.meta.dir, "..", "..", "..", "..", "data");
 const DB_PATH = join(DATA_DIR, "spend.db");
 
@@ -83,7 +84,22 @@ export function getDb(): Database {
 		)
 	`);
 
+	_db.run("CREATE INDEX IF NOT EXISTS idx_sessions_date ON sessions(date)");
+	_db.run("CREATE INDEX IF NOT EXISTS idx_sessions_cwd ON sessions(cwd)");
+	_db.run("CREATE INDEX IF NOT EXISTS idx_periods_date ON periods(date)");
+
 	return _db;
+}
+
+/** For testing only — inject an in-memory database. */
+export function setDb(db: Database): void {
+	_db = db;
+}
+
+/** For testing only — close and reset the singleton. */
+export function resetDb(): void {
+	_db?.close();
+	_db = null;
 }
 
 export function saveSessionV2(input: HookInput, resetsAt?: string): void {
