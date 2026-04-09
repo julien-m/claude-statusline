@@ -5,27 +5,51 @@ import { join } from "node:path";
 import { getContextData } from "./lib/context";
 import {
 	colors,
-	formatBranch,
 	formatCost,
 	formatDuration,
 	formatPath,
 } from "./lib/formatters";
+import type { GitStatus } from "./lib/git";
 import { getGitStatus } from "./lib/git";
 import {
 	renderStatusline,
+	renderStatuslineRaw,
+	type RawGitData,
+	type RawStatuslineData,
 	type StatuslineData,
 	type TokenBreakdownData,
 	type UsageLimit,
 } from "./lib/render-pure";
 import type { HookInput } from "./lib/types";
 
+type GetUsageLimits = typeof import("./lib/features/limits").getUsageLimits;
+type NormalizeResetsAt = (resetsAt: string) => string;
+type GetPeriodCost = typeof import("./lib/features/spend").getPeriodCost;
+type GetWeekCost = typeof import("./lib/features/spend").getWeekCost;
+type SaveSessionV2 = typeof import("./lib/features/spend").saveSessionV2;
+type GetDailyTokens = typeof import("./lib/features/spend").getDailyTokens;
+
+type UsageLimitsResult = {
+	five_hour: { utilization: number; resets_at: string | null } | null;
+	seven_day: { utilization: number; resets_at: string | null } | null;
+};
+
 // Optional feature imports - just delete the folder to disable!
-let getUsageLimits: any = null;
-let normalizeResetsAt: any = null;
-let getPeriodCost: any = null;
-let getWeekCost: any = null;
-let saveSessionV2: any = null;
-let getDailyTokens: any = null;
+let getUsageLimits: GetUsageLimits | null = null;
+let normalizeResetsAt: NormalizeResetsAt | null = null;
+let getPeriodCost: GetPeriodCost | null = null;
+let getWeekCost: GetWeekCost | null = null;
+let saveSessionV2: SaveSessionV2 | null = null;
+let getDailyTokens: GetDailyTokens | null = null;
+
+function gitStatusToRawGit(git: GitStatus): RawGitData {
+	return {
+		branch: git.branch,
+		dirty: git.hasChanges,
+		staged: git.staged,
+		unstaged: git.unstaged,
+	};
+}
 
 try {
 	const limitsModule = await import("./lib/features/limits");
@@ -80,7 +104,7 @@ async function main() {
 		await writeFile(LAST_PAYLOAD_PATH, JSON.stringify(input, null, 2));
 
 		// Get usage limits — prefer hook payload (no extra API call), fall back to API
-		let usageLimits: { five_hour: { utilization: number; resets_at: string } | null; seven_day: { utilization: number; resets_at: string } | null };
+		let usageLimits: UsageLimitsResult;
 		if (input.rate_limits) {
 			usageLimits = {
 				five_hour: input.rate_limits.five_hour
@@ -167,13 +191,13 @@ async function main() {
 		// Daily cost from ccusage
 		const todayCost = tokenBreakdown?.totalCost ?? 0;
 
-		const data: StatuslineData = {
-			branch: formatBranch(git),
-			dirPath: formatPath(input.workspace.current_dir, "truncated"),
+		const data: RawStatuslineData = {
+			git: gitStatusToRawGit(git),
+			path: formatPath(input.workspace.current_dir, "truncated"),
 			modelName: input.model.display_name,
 			contextWindowSize: input.context_window?.context_window_size,
-			sessionCost: formatCost(input.cost.total_cost_usd, "decimal1"),
-			sessionDuration: formatDuration(input.cost.total_duration_ms),
+			cost: input.cost.total_cost_usd,
+			durationMs: input.cost.total_duration_ms,
 			contextTokens,
 			contextPercentage,
 			...(getUsageLimits && {
@@ -198,7 +222,7 @@ async function main() {
 			...(getDailyTokens && { tokenBreakdown }),
 		};
 
-		const output = renderStatusline(data);
+		const output = renderStatuslineRaw(data);
 		console.log(output);
 	} catch (error) {
 		const errorMessage = error instanceof Error ? error.message : String(error);
