@@ -440,7 +440,7 @@ function formatTokenBreakdownPart(
 	const parts = [breakdownStr];
 
 	if (data.burnRatePerHour > 0) {
-		const burnStr = `🔥 $${data.burnRatePerHour.toFixed(1)}/h → $${data.blockProjectionCost.toFixed(0)} (${formatDuration(data.blockRemainingMin * 60_000)})`;
+		const burnStr = `🔥 $${data.burnRatePerHour.toFixed(1)}/h → $${data.blockProjectionCost.toFixed(0)}`;
 		parts.push(burnStr);
 	}
 
