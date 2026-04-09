@@ -145,22 +145,23 @@ function formatGitPart(git: RawGitData | null): string {
 	return parts.join(" ");
 }
 
-function formatSessionPart(
-	cost: number,
-	durationMs: number,
+function colorForUsagePct(pct: number): (text: string | number) => string {
+	if (pct < 45) return colors.green;
+	if (pct < 60) return colors.yellow;
+	if (pct < 80) return colors.orange;
+	return colors.red;
+}
+
+function group(content: string): string {
+	return `${colors.gray("[")}${content}${colors.gray("]")}`;
+}
+
+// Group 1: Context — [82% ██████░░░░ 164K]
+function formatContextGroup(
 	contextTokens: number | null,
 	contextPercentage: number | null,
 ): string {
-	if (contextTokens === null || contextPercentage === null) {
-		return `${colors.gray("S:")} ${colors.gray("-")}`;
-	}
-
-	const items: string[] = [];
-
-	items.push(
-		`${colors.gray("$")}${colors.dimWhite(formatCost(cost, COST_FORMAT))}`,
-	);
-	items.push(formatTokens(contextTokens, false));
+	if (contextTokens === null || contextPercentage === null) return "";
 
 	const bar = formatProgressBar({
 		percentage: contextPercentage,
@@ -169,107 +170,73 @@ function formatSessionPart(
 		colorMode: "progressive",
 		background: "none",
 	});
-	items.push(
-		`${bar} ${colors.lightGray(contextPercentage.toString())}${colors.gray("%")}`,
-	);
+	const pct = `${colors.lightGray(contextPercentage.toString())}${colors.gray("%")}`;
+	const tok = formatTokens(contextTokens, false);
 
-	items.push(colors.gray(`(${formatDuration(durationMs)})`));
-
-	return `${colors.gray("S:")} ${items.join(" ")}`;
+	return group(`${pct} ${bar} ${tok}`);
 }
 
-function colorForUsagePct(pct: number): (text: string | number) => string {
-	if (pct < 45) return colors.green;
-	if (pct < 60) return colors.yellow;
-	if (pct < 80) return colors.orange;
-	return colors.red;
-}
-
-function formatLimitsPart(
-	fiveHour: UsageLimit | null,
-	periodCost: number,
+// Group 2: Money — [D $57.8 · W $2038 · 🔥 $12.4/h]
+function formatMoneyGroup(
+	todayCost: number,
+	weekCost: number,
+	tokenBreakdown: TokenBreakdownData | null | undefined,
 ): string {
-	if (!fiveHour) return "";
-
 	const parts: string[] = [];
 
-	if (periodCost > 0) {
+	if (todayCost > 0) {
 		parts.push(
-			`${colors.gray("$")}${colors.dimWhite(formatCost(periodCost, COST_FORMAT))}`,
+			`${colors.gray("D")} ${colors.gray("$")}${colors.dimWhite(formatCost(todayCost, COST_FORMAT))}`,
 		);
 	}
-
-	const pctColor = colorForUsagePct(fiveHour.utilization);
-	parts.push(`${pctColor(fiveHour.utilization.toString())}${colors.gray("%")}`);
-
-	if (fiveHour.resets_at) {
-		parts.push(colors.gray(`(${formatResetTime(fiveHour.resets_at)})`));
-	}
-
-	return parts.length > 0 ? `${colors.gray("5h")} ${parts.join(" ")}` : "";
-}
-
-function calculateWeeklyDelta(
-	utilization: number,
-	resetsAt: string | null,
-): number {
-	if (!resetsAt) return 0;
-	const resetDate = new Date(resetsAt);
-	const now = new Date();
-	const diffMs = resetDate.getTime() - now.getTime();
-	const hoursRemaining = Math.max(0, diffMs / 3600000);
-	const timeElapsedPercent =
-		((WEEKLY_HOURS - hoursRemaining) / WEEKLY_HOURS) * 100;
-	return utilization - timeElapsedPercent;
-}
-
-function formatPacingDelta(delta: number): string {
-	const sign = delta >= 0 ? "+" : "";
-	const value = `${sign}${delta.toFixed(1)}%`;
-
-	if (delta > 5) return colors.green(value);
-	if (delta > 0) return colors.lightGray(value);
-	if (delta > -10) return colors.yellow(value);
-	return colors.red(value);
-}
-
-function formatWeeklyPart(
-	sevenDay: UsageLimit | null,
-	weekCost: number,
-): string {
-	if (!sevenDay) return "";
-
-	const parts: string[] = [];
-
 	if (weekCost > 0) {
 		parts.push(
-			`${colors.gray("$")}${colors.dimWhite(formatCost(weekCost, COST_FORMAT))}`,
+			`${colors.gray("W")} ${colors.gray("$")}${colors.dimWhite(formatCost(weekCost, COST_FORMAT))}`,
 		);
 	}
-
-	const pctColor = colorForUsagePct(sevenDay.utilization);
-	parts.push(`${pctColor(sevenDay.utilization.toString())}${colors.gray("%")}`);
-
-	if (sevenDay.resets_at) {
-		const delta = calculateWeeklyDelta(
-			sevenDay.utilization,
-			sevenDay.resets_at,
-		);
+	if (tokenBreakdown && tokenBreakdown.burnRatePerHour > 0) {
 		parts.push(
-			`${colors.gray("(")}${formatPacingDelta(delta)}${colors.gray(")")}`,
+			`🔥 ${colors.gray("$")}${tokenBreakdown.burnRatePerHour.toFixed(1)}${colors.gray("/h")}`,
 		);
-
-		parts.push(colors.gray(`(${formatResetTime(sevenDay.resets_at)})`));
 	}
 
-	return parts.length > 0 ? `${colors.gray("7d")} ${parts.join(" ")}` : "";
+	return parts.length > 0 ? group(parts.join(` ${colors.gray("·")} `)) : "";
 }
 
-function formatDailyPart(todayCost: number): string {
-	if (todayCost <= 0) return "";
-	return `${colors.gray("D:")} ${colors.gray("$")}${colors.dimWhite(formatCost(todayCost, COST_FORMAT))}`;
+// Group 3: Session — [S $7.9 · 2h36m]
+function formatSessionGroup(cost: number, durationMs: number): string {
+	const costStr = `${colors.gray("S")} ${colors.gray("$")}${colors.dimWhite(formatCost(cost, COST_FORMAT))}`;
+	const dur = colors.gray(formatDuration(durationMs));
+	return group(`${costStr} ${colors.gray("·")} ${dur}`);
 }
 
+// Group 4: Quotas — [5h 45% 1h50m · 7d 65%]
+function formatQuotasGroup(
+	fiveHour: UsageLimit | null,
+	sevenDay: UsageLimit | null,
+): string {
+	const parts: string[] = [];
+
+	if (fiveHour) {
+		const pctColor = colorForUsagePct(fiveHour.utilization);
+		let seg = `${colors.gray("5h")} ${pctColor(fiveHour.utilization.toString())}${colors.gray("%")}`;
+		if (fiveHour.resets_at) {
+			seg += ` ${colors.gray(formatResetTime(fiveHour.resets_at))}`;
+		}
+		parts.push(seg);
+	}
+
+	if (sevenDay) {
+		const pctColor = colorForUsagePct(sevenDay.utilization);
+		parts.push(
+			`${colors.gray("7d")} ${pctColor(sevenDay.utilization.toString())}${colors.gray("%")}`,
+		);
+	}
+
+	return parts.length > 0 ? group(parts.join(` ${colors.gray("·")} `)) : "";
+}
+
+// Group 5: Token breakdown — [in:1% out:6% cw:51% cr:58%]
 function tokenCostPct(
 	tokens: number,
 	pricePerMTok: number,
@@ -279,42 +246,24 @@ function tokenCostPct(
 	return Math.round(((tokens * pricePerMTok) / 1_000_000 / totalCost) * 100);
 }
 
-function formatTokenBreakdownPart(
+function formatTokensGroup(
 	data: TokenBreakdownData | null | undefined,
 ): string {
 	if (!data || data.totalCost <= 0) return "";
 
-	const inPct = tokenCostPct(
-		data.inputTokens,
-		TOKEN_PRICES.input,
-		data.totalCost,
-	);
-	const outPct = tokenCostPct(
-		data.outputTokens,
-		TOKEN_PRICES.output,
-		data.totalCost,
-	);
-	const cwPct = tokenCostPct(
-		data.cacheCreationTokens,
-		TOKEN_PRICES.cacheWrite,
-		data.totalCost,
-	);
-	const crPct = tokenCostPct(
-		data.cacheReadTokens,
-		TOKEN_PRICES.cacheRead,
-		data.totalCost,
-	);
+	const inPct = tokenCostPct(data.inputTokens, TOKEN_PRICES.input, data.totalCost);
+	const outPct = tokenCostPct(data.outputTokens, TOKEN_PRICES.output, data.totalCost);
+	const cwPct = tokenCostPct(data.cacheCreationTokens, TOKEN_PRICES.cacheWrite, data.totalCost);
+	const crPct = tokenCostPct(data.cacheReadTokens, TOKEN_PRICES.cacheRead, data.totalCost);
 
-	const breakdownStr = `in:${inPct}% out:${outPct}% cw:${cwPct}% cr:${crPct}%`;
-	const parts = [breakdownStr];
+	const content = [
+		`${colors.blue("in")}${colors.gray(":")}${inPct}${colors.gray("%")}`,
+		`${colors.green("out")}${colors.gray(":")}${outPct}${colors.gray("%")}`,
+		`${colors.orange("cw")}${colors.gray(":")}${cwPct}${colors.gray("%")}`,
+		`${colors.cyan("cr")}${colors.gray(":")}${crPct}${colors.gray("%")}`,
+	].join(" ");
 
-	if (data.burnRatePerHour > 0) {
-		parts.push(
-			`🔥 $${data.burnRatePerHour.toFixed(1)}/h → $${data.blockProjectionCost.toFixed(0)}`,
-		);
-	}
-
-	return `${colors.gray("T:")} ${parts.join(` ${colors.gray("·")} `)}`;
+	return group(content);
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -343,36 +292,28 @@ export function renderStatuslineRaw(data: RawStatuslineData): string {
 
 	sections.push(line1Parts.join(` ${sep} `));
 
-	// Line 2: Session info
-	const sessionPart = formatSessionPart(
-		data.cost,
-		data.durationMs,
-		data.contextTokens,
-		data.contextPercentage,
-	);
-	if (sessionPart) sections.push(sessionPart);
+	// Line 2: 5 groups in brackets
+	const contextGroup = formatContextGroup(data.contextTokens, data.contextPercentage);
+	if (contextGroup) sections.push(contextGroup);
 
-	// 5h limit
-	const limitsPart = formatLimitsPart(
-		data.usageLimits?.five_hour ?? null,
-		data.periodCost ?? 0,
-	);
-	if (limitsPart) sections.push(limitsPart);
-
-	// 7d weekly
-	const weeklyPart = formatWeeklyPart(
-		data.usageLimits?.seven_day ?? null,
+	const moneyGroup = formatMoneyGroup(
+		data.todayCost ?? 0,
 		data.weekCost ?? 0,
+		data.tokenBreakdown,
 	);
-	if (weeklyPart) sections.push(weeklyPart);
+	if (moneyGroup) sections.push(moneyGroup);
 
-	// Daily
-	const dailyPart = formatDailyPart(data.todayCost ?? 0);
-	if (dailyPart) sections.push(dailyPart);
+	const sessionGroup = formatSessionGroup(data.cost, data.durationMs);
+	if (sessionGroup) sections.push(sessionGroup);
 
-	// Token breakdown
-	const tokenBreakdownPart = formatTokenBreakdownPart(data.tokenBreakdown);
-	if (tokenBreakdownPart) sections.push(tokenBreakdownPart);
+	const quotasGroup = formatQuotasGroup(
+		data.usageLimits?.five_hour ?? null,
+		data.usageLimits?.seven_day ?? null,
+	);
+	if (quotasGroup) sections.push(quotasGroup);
+
+	const tokensGroup = formatTokensGroup(data.tokenBreakdown);
+	if (tokensGroup) sections.push(tokensGroup);
 
 	// Two-line mode: break after line1
 	const line1 = sections[0];
