@@ -46,7 +46,9 @@ export async function getContextLength(
 					mostRecentTimestamp = entryTime;
 					mostRecentMainChainEntry = data;
 				}
-			} catch {}
+			} catch {
+				// skip malformed or non-JSON JSONL lines
+			}
 		}
 
 		if (!mostRecentMainChainEntry?.message?.usage) {
