@@ -101,4 +101,7 @@ export interface StatuslineConfig {
 	dailySpend: {
 		cost: CostConfig;
 	};
+	tokenBreakdown?: {
+		enabled: boolean;
+	};
 }
