@@ -4,152 +4,56 @@ Clean, modular statusline for Claude Code with TypeScript + Bun.
 
 ## Features
 
-- 🌿 Git branch with changes (+added -deleted)
-- 💰 Session cost and duration
-- 🧩 Context tokens used
-- 📊 Context percentage (0-100%)
-- ⏱️ Five-hour usage limit with reset time
-- 📅 Weekly usage limit with configurable threshold
-- 📈 Daily usage percentage tracking and statistics
+- 🌿 Git branch with changes (+added -deleted ~staged ~unstaged)
+- 🧩 Session cost, context tokens, context %, and duration (`S:`)
+- ⏱️ Five-hour usage limit with period cost and reset time (`5h`)
+- 📅 Seven-day usage limit with weekly pacing delta (`7d`)
+- 💰 Daily cost from ccusage (`D:`)
+- 📊 Token breakdown by type with live burn rate (`T:`)
+
+## Output
+
+Two-line statusline:
+
+```
+main* +12 -3 · ~/projects/myapp · Sonnet 4.6 (200K context)
+S: $0.17 62.5K ⣿⣿⣿⣀⣀⣀⣀⣀⣀⣀ 31% (6m) · 5h $1.2 15% (3h27m) · 7d $8.4 45% (+2.1%) (6d12h) · D: $4.50 · T: in:12% out:55% cw:18% cr:15%
+```
+
+**Segments:**
+
+| Segment | Content |
+|---------|---------|
+| `S:` | Session cost · context tokens · progress bar · context % · duration |
+| `5h` | Period cost · 5-hour utilization % · reset countdown |
+| `7d` | Week cost · 7-day utilization % · pacing delta · reset countdown |
+| `D:` | Daily total cost from ccusage (updated by cron) |
+| `T:` | Token cost breakdown by type + burn rate if block is active |
 
 ## Structure
 
 ```
 src/
-├── index.ts              # Main entry point
+├── index.ts                          # Main entry — orchestrates all components
 └── lib/
-    ├── types.ts          # TypeScript interfaces
-    ├── git.ts            # Git status
-    ├── context.ts        # Context calculation from transcript
-    ├── usage-limits.ts   # Claude API usage limits
-    └── formatters.ts     # Formatting utilities
+    ├── types.ts                      # TypeScript interfaces (HookInput)
+    ├── git.ts                        # Git status (branch, staged, unstaged changes)
+    ├── context.ts                    # Transcript parsing & context calculation (fallback)
+    ├── period.ts                     # Period ID normalization
+    ├── render-pure.ts                # Pure renderer — raw data in, formatted string out
+    ├── formatters.ts                 # ANSI colors, formatting utilities
+    └── features/
+        ├── limits/
+        │   └── index.ts              # OAuth API usage limits
+        └── spend/
+            ├── index.ts              # SQLite DB (sessions, periods, daily_tokens)
+            └── commands/
+                ├── spend-today.ts    # Today's sessions table
+                ├── spend-month.ts    # Monthly spend grouped by date
+                ├── spend-project.ts  # Spend grouped by project
+                ├── sync-daily-tokens.ts  # Sync ccusage → daily_tokens table
+                └── migrate-to-sqlite.ts  # Migrate old JSON data to SQLite
 ```
-
-## Development
-
-```bash
-# Install dependencies
-bun install
-
-# Run the statusline (needs stdin JSON)
-echo '{ ... }' | bun run start
-
-# View today's spending
-bun run spend:today
-
-# View this month's spending
-bun run spend:month
-
-# View usage statistics
-bun run stats
-
-# Interactive config demo
-bun run demo
-
-# Format code
-bun run format
-
-# Lint code
-bun run lint
-```
-
-## Tracking Features
-
-### Spend Tracking
-
-The statusline automatically saves session data to `data/spend.json`. You can view your spending with:
-
-```bash
-# Today's sessions and cost
-bun run spend:today
-
-# This month's sessions grouped by date
-bun run spend:month
-```
-
-Each session tracks:
-- Cost (USD)
-- Duration
-- Lines added/removed
-- Working directory
-
-### Usage Statistics
-
-Daily usage percentages are automatically tracked in `data/daily-usage.json`. Each 5-hour rate limit period is tracked separately using the `resets_at` timestamp as a unique key.
-
-```bash
-bun run stats
-```
-
-This shows:
-- Average daily usage percentage across all tracked days
-- Total days and total 5-hour periods tracked
-- Recent 7-day usage history with visual bars
-- Per-day statistics: average, max, min across all 5-hour periods
-- Data is kept for 90 days
-
-**How it works:**
-- Each `resets_at` value represents a unique 5-hour rate limit period
-- Multiple 5-hour periods can occur in a single day
-- If the API is called multiple times during the same 5-hour period, only the latest value is kept
-- Daily statistics show the average, maximum, and minimum usage across all periods in that day
-
-## Interactive Demo
-
-Explore all configuration options with a live preview:
-
-```bash
-bun run demo
-```
-
-This opens an interactive menu where you can:
-- Toggle any config option with arrow keys and spacebar
-- See instant preview of how the statusline changes
-- Navigate through all available settings
-- Reset to defaults with `R`
-- Explore session, limits, weekly usage, and git display options
-
-**Controls:**
-- `↑↓` or `j/k` - Navigate options
-- `Space` - Toggle selected option
-- `R` - Reset to defaults
-- `Q` - Quit
-
-## Configuration
-
-The statusline can be customized via `statusline.config.ts`. Key configuration options:
-
-### Weekly Usage Display
-
-```typescript
-weeklyUsage: {
-  enabled: boolean | "90%",  // true: always show, false: never, "90%": show when 5-hour usage >= 90%
-  showTimeLeft: boolean,
-  percentage: {
-    enabled: boolean,
-    progressBar: {
-      enabled: boolean,
-      length: 5 | 10 | 15,
-      style: "filled" | "rectangle" | "braille",
-      color: "progressive" | "green" | "yellow" | "red"
-    }
-  }
-}
-```
-
-**Default:** `enabled: "90%"` - Weekly limits appear when your 5-hour usage reaches 90%
-
-Display format: `W: ⣿⣿⣧⣀⣀⣀⣀⣀⣀⣀ 45% (6d12h)`
-
-### Other Configuration Options
-
-- **Session display**: Cost, tokens, context percentage
-- **Limits display**: Five-hour usage limits
-- **Git display**: Branch, changes, staged/unstaged files
-- **Path display**: Full, truncated, or basename modes
-- **Progress bars**: Multiple styles and color schemes
-
-See `statusline.config.ts` for all available options and defaults.
 
 ## Usage in Claude Code
 
@@ -165,29 +69,118 @@ Update your `~/.claude/settings.json`:
 }
 ```
 
+## Spend Tracking
+
+Session data is stored in `data/spend.db` (SQLite). Four tables:
+
+| Table | Content |
+|-------|---------|
+| `sessions` | One row per session: cost, duration, lines, cwd |
+| `session_period_tracking` | Per-session period cost deltas |
+| `periods` | Aggregated cost per 5-hour period |
+| `daily_tokens` | Daily token counts from ccusage (upserted, one row per day) |
+
+### Viewing spend data
+
+Run directly with Bun:
+
+```bash
+# Today's sessions
+bun src/lib/features/spend/commands/spend-today.ts
+
+# Monthly spend grouped by date
+bun src/lib/features/spend/commands/spend-month.ts
+
+# Spend grouped by project
+bun src/lib/features/spend/commands/spend-project.ts
+```
+
+### Syncing daily tokens
+
+`sync-daily-tokens.ts` fetches today's aggregated token data from ccusage and upserts it into `daily_tokens`. It uses `INSERT ... ON CONFLICT(date) DO UPDATE` — one row per day, always updated in place.
+
+```bash
+bun src/lib/features/spend/commands/sync-daily-tokens.ts
+```
+
+Intended to be triggered by a cron job or Claude Code hook.
+
+## Architecture
+
+### Data flow
+
+```
+Claude Code Hook → stdin JSON → index.ts
+                                    ↓
+                  ┌─────────────────┼─────────────────┐
+                  ↓                 ↓                  ↓
+          [Rate limits]       [Git status]     [Context tokens]
+          from payload        from git CLI     from payload
+          (fallback: API)                      (fallback: transcript)
+                  └─────────────────┼─────────────────┘
+                                    ↓
+                           [SQLite reads]
+                           period cost, week cost,
+                           daily tokens
+                                    ↓
+                         renderStatuslineRaw()
+                                    ↓
+                            stdout (2 lines)
+```
+
+### Optional features
+
+Features are loaded dynamically. Delete or rename the feature folder to disable it — the statusline continues to work without it:
+
+- `src/lib/features/limits/` — 5h/7d usage limits
+- `src/lib/features/spend/` — session tracking, period cost, daily tokens
+
+### Context window
+
+Context tokens are read from `input.context_window.current_usage` (provided directly by the Claude Code hook payload). Falls back to transcript parsing if the payload field is absent.
+
+### Rate limits
+
+5-hour and 7-day limits are read from `input.rate_limits` (hook payload). Falls back to the OAuth API if not present.
+
+## Development
+
+```bash
+# Install dependencies
+bun install
+
+# Run the statusline (requires hook JSON on stdin)
+echo '{ ... }' | bun run src/index.ts
+
+# Format code
+bunx biome format --write .
+
+# Lint code
+bunx biome lint .
+```
+
 ## Testing
 
 ```bash
-echo '{
-  "session_id": "test",
-  "transcript_path": "/path/to/transcript.jsonl",
-  "cwd": "/path",
-  "model": {
-    "id": "claude-sonnet-4-5",
-    "display_name": "Sonnet 4.5"
-  },
-  "workspace": {
-    "current_dir": "/path",
-    "project_dir": "/path"
-  },
-  "version": "2.0.31",
-  "output_style": { "name": "default" },
-  "cost": {
-    "total_cost_usd": 0.15,
-    "total_duration_ms": 300000,
-    "total_api_duration_ms": 200000,
-    "total_lines_added": 100,
-    "total_lines_removed": 50
-  }
-}' | bun run start
+# Run all tests
+bun test
+
+# Run specific test suite
+bun test src/tests/spend-v2.test.ts
+bun test src/tests/daily-tokens.test.ts
 ```
+
+## Authentication
+
+The OAuth token is stored in macOS Keychain (used as fallback when `rate_limits` is not in the hook payload):
+
+- **Service**: `Claude Code-credentials`
+- **Format**: JSON with `claudeAiOauth.accessToken`
+- **Token type**: `sk-ant-oat01-...`
+- **Access**: `security find-generic-password -s "Claude Code-credentials" -w`
+
+## Known Limitations
+
+- macOS only (Keychain for OAuth token fallback)
+- Requires `git` CLI for git status
+- `sync-daily-tokens.ts` requires `ccusage` CLI to be installed

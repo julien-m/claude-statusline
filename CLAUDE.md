@@ -8,11 +8,12 @@ Clean, type-safe statusline implementation for Claude Code using Bun + TypeScrip
 
 ### Dependencies
 
-- **Bun**: Runtime (uses `$` for shell commands)
+- **Bun**: Runtime (uses `$` for shell commands, `bun:sqlite` for DB)
 - **@biomejs/biome**: Linting & formatting
-- **TypeScript**: Type safety
+- **picocolors**: Terminal colors (for spend commands)
+- **table**: Table rendering (for spend commands)
 
-No external npm packages required - pure Bun APIs.
+No external npm packages required beyond the above.
 
 ### Configuration in Claude Code
 
@@ -28,9 +29,9 @@ Add to `~/.claude/settings.json`:
 }
 ```
 
-### Authentication
+### Authentication (fallback only)
 
-OAuth token stored in macOS Keychain:
+OAuth token stored in macOS Keychain — used only when `rate_limits` is absent from hook payload:
 
 - **Service**: `Claude Code-credentials`
 - **Format**: JSON with `claudeAiOauth.accessToken`
@@ -41,17 +42,27 @@ OAuth token stored in macOS Keychain:
 
 ### Modular Design
 
-The project follows a clean architecture with separated concerns:
-
 ```
 src/
-├── index.ts              # Main entry - orchestrates all components
+├── index.ts                          # Main entry — orchestrates all components
 └── lib/
-    ├── types.ts          # TypeScript interfaces (HookInput)
-    ├── git.ts            # Git operations (branch, changes)
-    ├── context.ts        # Transcript parsing & context calculation
-    ├── usage-limits.ts   # Claude OAuth API integration
-    └── formatters.ts     # Display utilities & colors
+    ├── types.ts                      # TypeScript interfaces (HookInput)
+    ├── git.ts                        # Git operations (branch, staged/unstaged changes)
+    ├── context.ts                    # Transcript parsing & context calculation (fallback)
+    ├── period.ts                     # Period ID normalization (normalizeResetsAt)
+    ├── render-pure.ts                # Pure renderer — raw data in, formatted string out
+    ├── formatters.ts                 # ANSI color codes, display utilities
+    └── features/
+        ├── limits/
+        │   └── index.ts              # OAuth API usage limits (5h + 7d)
+        └── spend/
+            ├── index.ts              # SQLite singleton, schema, all spend logic
+            └── commands/
+                ├── spend-today.ts    # CLI: today's sessions table
+                ├── spend-month.ts    # CLI: monthly spend by date
+                ├── spend-project.ts  # CLI: spend grouped by project
+                ├── sync-daily-tokens.ts  # CLI: ccusage → daily_tokens upsert
+                └── migrate-to-sqlite.ts  # CLI: migrate old JSON → SQLite
 ```
 
 ### Data Flow
@@ -59,15 +70,18 @@ src/
 ```
 Claude Code Hook → stdin JSON → index.ts
                                     ↓
-                    ┌───────────────┴───────────────┐
-                    ↓                               ↓
-            [Get Git Status]            [Get Context Data]
-                    ↓                               ↓
-            [Format Branch]             [Get Usage Limits]
-                    ↓                               ↓
-                    └───────────────┬───────────────┘
+                  ┌─────────────────┼─────────────────┐
+                  ↓                 ↓                  ↓
+          [Rate limits]       [Git status]     [Context tokens]
+          from payload        from git CLI     from payload
+          (fallback: API)                      (fallback: transcript)
+                  └─────────────────┼─────────────────┘
                                     ↓
-                            [Build Output Lines]
+                           [SQLite reads]
+                           period cost, week cost,
+                           daily tokens
+                                    ↓
+                         renderStatuslineRaw()
                                     ↓
                             stdout (2 lines)
 ```
@@ -76,130 +90,133 @@ Claude Code Hook → stdin JSON → index.ts
 
 ### Context Calculation (`lib/context.ts`)
 
-- **Purpose**: Calculate token usage from Claude Code transcript files
-- **Algorithm**: Parses `.jsonl` transcript, finds most recent main-chain entry
+- **Primary**: Reads `input.context_window.current_usage` from hook payload
+- **Fallback**: Parses `.jsonl` transcript, finds most recent main-chain entry
 - **Tokens counted**: `input_tokens + cache_read_input_tokens + cache_creation_input_tokens`
 - **Excludes**: Sidechain entries (agent calls), API error messages
-- **Output**: `{ tokens: number, percentage: number }` (0-100% of 200k context)
+- **Output**: `{ tokens: number, percentage: number }` (0-100% of context window)
 
-### Usage Limits (`lib/usage-limits.ts`)
+### Usage Limits (`lib/features/limits/index.ts`)
 
-- **Purpose**: Fetch Claude API rate limits from OAuth endpoint
-- **Auth**: Retrieves OAuth token from macOS Keychain (`Claude Code-credentials`)
-- **API**: `https://api.anthropic.com/api/oauth/usage`
-- **Data**: Five-hour window utilization + reset time
+- **Primary**: Reads `input.rate_limits` from hook payload (no API call)
+- **Fallback**: Fetches from `https://api.anthropic.com/api/oauth/usage` via Keychain auth
+- **Data**: 5-hour window + 7-day window utilization and reset times
 - **Error handling**: Fails silently, returns null on errors
 
 ### Git Status (`lib/git.ts`)
 
 - **Purpose**: Show current branch and uncommitted changes
-- **Detection**: Checks both staged and unstaged changes
-- **Output**: Branch name + line additions/deletions
-- **Display**: `main* (+123 -45)` with color coding
+- **Detection**: Counts staged and unstaged additions/deletions/files separately
+- **Output**: `{ branch, hasChanges, staged, unstaged }`
+- **Display**: `main* +123 -45 ~2 ~1` with color coding
 
-### Formatters (`lib/formatters.ts`)
+### Spend / SQLite (`lib/features/spend/index.ts`)
 
-- **Colors**: ANSI color codes for terminal output
-- **Token display**: `62.5K`, `1.2M` format
-- **Time formatting**: `3h21m`, `45m` for countdowns
-- **Reset time**: Calculates difference between API reset time and now
+- **DB**: `data/spend.db` (WAL mode)
+- **Tables**: `sessions`, `session_period_tracking`, `periods`, `daily_tokens`
+- **`daily_tokens`**: Upserted by `sync-daily-tokens.ts` — one row per day, updated in place
+- **Singleton**: `getDb()` — use `setDb()` / `resetDb()` for test injection only
+
+### Pure Renderer (`lib/render-pure.ts`)
+
+- **Input**: `RawStatuslineData` — all raw numbers/strings, no pre-formatting
+- **Output**: Two-line string ready for stdout
+- **Segments**: `S:` session · `5h` limits · `7d` weekly · `D:` daily · `T:` token breakdown
+- **No I/O, no side effects** — pure function, fully testable
 
 ## Output Specification
 
-### Line 1: Session Info
+### Line 1: Git + Path + Model
 
 ```
-main* (+123 -45) | ~/.claude | Sonnet 4.5
+main* +12 -3 · ~/projects/myapp · Sonnet 4.6 (200K context)
 ```
 
 ### Line 2: Metrics
 
 ```
-$0.17 (6m) | 62.5K tokens | 31% | 15% (3h27m)
+S: $0.17 62.5K ⣿⣿⣿⣀⣀⣀⣀⣀⣀⣀ 31% (6m) · 5h $1.2 15% (3h27m) · 7d $8.4 45% (+2.1%) (6d12h) · D: $4.50 · T: in:12% out:55% cw:18% cr:15%
 ```
 
-**Components:**
+**Segments:**
 
-- `$0.17` - Session cost (USD)
-- `(6m)` - Session duration
-- `62.5K tokens` - Context tokens used (from transcript)
-- `31%` - Context percentage (tokens / 200k)
-- `15%` - Five-hour usage (from Claude API)
-- `(3h27m)` - Time until rate limit resets
+| Label | Content |
+|-------|---------|
+| `S:` | Session cost · context tokens · braille progress bar · context % · duration |
+| `5h` | Period cost · 5h utilization % · reset countdown |
+| `7d` | Week cost · 7d utilization % · pacing delta · reset countdown |
+| `D:` | Daily total cost (from ccusage via `daily_tokens`) |
+| `T:` | Token cost % breakdown (in/out/cw/cr) + burn rate if block active |
 
 ## Development
+
+### Running commands
+
+```bash
+# Run the statusline (requires hook JSON on stdin)
+echo '{ ... }' | bun run src/index.ts
+
+# Today's sessions
+bun src/lib/features/spend/commands/spend-today.ts
+
+# Monthly spend
+bun src/lib/features/spend/commands/spend-month.ts
+
+# Sync ccusage → daily_tokens
+bun src/lib/features/spend/commands/sync-daily-tokens.ts
+
+# Format / lint
+bunx biome format --write .
+bunx biome lint .
+```
 
 ### Testing
 
 ```bash
-# Run test with fixture
-bun run test
-
-# Use custom fixture
-bun run test fixtures/custom.json
-
-# Manual test
-echo '{ ... }' | bun run start
+bun test
+bun test src/tests/spend-v2.test.ts
+bun test src/tests/daily-tokens.test.ts
 ```
 
-### Code Conventions
-
-- **ALWAYS** use camelCase for variables and functions
-- Use TypeScript strict mode
-- Follow Biome formatting rules
+Tests use `setDb()` / `resetDb()` for in-memory SQLite injection — no production DB touched.
 
 ### Error Handling & Performance
 
-**Error Handling** - All components fail silently:
+**Error Handling** — All components fail silently:
 
 - Missing transcript → 0 tokens, 0%
 - API failure → No usage limits shown
 - Git errors → "no-git" branch
-- Keychain access denied → No usage limits
-
-This ensures statusline never crashes Claude Code.
+- Keychain access denied → No usage limits shown
+- ccusage unavailable → `D:` and `T:` segments hidden
 
 **Performance Benchmarks:**
 
 - Context calculation: ~10-50ms (depends on transcript size)
-- API call: ~100-300ms (cached by Claude API)
+- API call: ~100-300ms (cached; skipped if payload has rate_limits)
 - Git operations: ~20-50ms
+- SQLite reads: <5ms
 - Total: < 500ms typical
 
 ## Maintenance Guide
 
 ### Adding New Metrics
 
-1. Add interface to `lib/types.ts`
-2. Create fetcher in `lib/*.ts`
-3. Import in `index.ts`
-4. Add to `buildSecondLine()`
+1. Add interface to `lib/render-pure.ts` (or `lib/types.ts`)
+2. Create fetcher in `lib/*.ts` or `lib/features/*/`
+3. Import dynamically in `index.ts`
+4. Add render function to `lib/render-pure.ts`
+5. Wire into `renderStatuslineRaw()`
 
 ### Modifying Display
 
-- Colors: Edit `lib/formatters.ts` colors constant
-- Layout: Modify `buildFirstLine()` / `buildSecondLine()`
+- Colors: Edit `lib/formatters.ts` `colors` constant
+- Layout: Modify format functions in `lib/render-pure.ts`
 - Formatting: Add functions to `lib/formatters.ts`
 
 ## Known Limitations
 
-- macOS only (uses Keychain)
+- macOS only (uses Keychain for OAuth fallback)
 - Requires `git` CLI for git status
+- `sync-daily-tokens.ts` requires `ccusage` CLI
 - Requires Claude Code OAuth (not API key)
-- Transcript must be accessible (permissions)
-
-## Critical Requirements
-
-### Configuration Updates
-
-- **CRITICAL**: When updating `statusline.config.json` or `statusline.config.ts`, you **MUST** update the interactive demo in `src/commands/interactive-config.ts`
-- **ALWAYS** run `bun run config` after config changes to verify the interactive demo works correctly
-- **REQUIRED**: Keep config file structure in sync with interactive prompts
-
-### Runtime & Dependencies
-
-- **ALWAYS** use Bun for all commands and runtime operations
-- Use `bun run <script>` instead of `npm run` or `pnpm run`
-- Use `bun install` for dependency management
-- **AUTHORIZED LIBRARIES**: `@biomejs/biome` for linting/formatting, third-party libraries like `tiers` are permitted if needed
-- **NEVER** add external npm packages without verification - prefer Bun APIs first
