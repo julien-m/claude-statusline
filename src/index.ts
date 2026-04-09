@@ -24,7 +24,6 @@ import type { HookInput } from "./lib/types";
 let getUsageLimits: any = null;
 let normalizeResetsAt: any = null;
 let getPeriodCost: any = null;
-let getTodayCostV2: any = null;
 let getWeekCost: any = null;
 let saveSessionV2: any = null;
 let getDailyTokens: any = null;
@@ -47,7 +46,6 @@ try {
 try {
 	const spendModule = await import("./lib/features/spend");
 	getPeriodCost = spendModule.getPeriodCost;
-	getTodayCostV2 = spendModule.getTodayCostV2;
 	getWeekCost = spendModule.getWeekCost;
 	saveSessionV2 = spendModule.saveSessionV2;
 	getDailyTokens = spendModule.getDailyTokens;
@@ -158,15 +156,13 @@ async function main() {
 
 		// Get period cost from SQLite (if feature exists)
 		let periodCost: number | undefined;
-		let todayCost: number | undefined;
 		let weekCost: number | undefined;
 
-		if (getPeriodCost && getTodayCostV2 && normalizeResetsAt) {
+		if (getPeriodCost && normalizeResetsAt) {
 			const normalizedPeriodId = currentResetsAt
 				? normalizeResetsAt(currentResetsAt)
 				: null;
 			periodCost = normalizedPeriodId ? getPeriodCost(normalizedPeriodId) : 0;
-			todayCost = getTodayCostV2();
 		}
 
 		if (getWeekCost && usageLimits.seven_day?.resets_at) {
@@ -179,6 +175,9 @@ async function main() {
 		if (getDailyTokens && config.tokenBreakdown?.enabled) {
 			tokenBreakdown = getDailyTokens(today);
 		}
+
+		// Daily cost from ccusage (more accurate than session accumulation)
+		const todayCost = tokenBreakdown?.totalCost ?? 0;
 
 		const data: StatuslineData = {
 			branch: formatBranch(git, config.git),
@@ -208,7 +207,8 @@ async function main() {
 						: null,
 				},
 			}),
-			...((getPeriodCost || getTodayCostV2) && { periodCost, todayCost }),
+			...(getPeriodCost && { periodCost }),
+			todayCost,
 			...(getWeekCost && { weekCost }),
 			...(getDailyTokens && { tokenBreakdown }),
 		};
