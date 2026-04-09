@@ -2,10 +2,8 @@
  * Pure statusline renderer - no I/O, no side effects
  *
  * ARCHITECTURE: Raw data in, formatted string out.
- * ALL config decisions happen here, not in data preparation.
  */
 
-import type { StatuslineConfig } from "./config-types";
 import {
 	colors,
 	formatCost,
@@ -15,6 +13,15 @@ import {
 	formatResetTime,
 	formatTokens,
 } from "./formatters";
+
+// ─────────────────────────────────────────────────────────────
+// DISPLAY CONFIGURATION (hardcoded)
+// ─────────────────────────────────────────────────────────────
+
+const SEP = "·";
+const PATH_MODE = "truncated" as const;
+const COST_FORMAT = "decimal1" as const;
+const MAX_CONTEXT_TOKENS = 200000;
 
 const WEEKLY_HOURS = 168; // 7 days * 24 hours
 const FIVE_HOUR_MINUTES = 300; // 5 hours * 60 minutes
@@ -93,7 +100,7 @@ export interface StatuslineData {
 }
 
 // ─────────────────────────────────────────────────────────────
-// FORMATTING - All config-aware formatting in one place
+// FORMATTING
 // ─────────────────────────────────────────────────────────────
 
 function formatContextWindowSize(tokens: number): string {
@@ -108,47 +115,24 @@ function formatContextWindowSize(tokens: number): string {
 	return tokens.toString();
 }
 
-function formatGitPart(
-	git: RawGitData | null,
-	config: StatuslineConfig["git"],
-): string {
-	if (!git || !config.enabled) return "";
+function formatGitPart(git: RawGitData | null): string {
+	if (!git) return "";
 
-	const parts: string[] = [];
+	const parts: string[] = [colors.lightGray(git.branch)];
 
-	if (config.showBranch) {
-		parts.push(colors.lightGray(git.branch));
-	}
-
-	if (git.dirty && config.showDirtyIndicator) {
-		// Append to branch name without space
-		if (parts.length > 0) {
-			parts[parts.length - 1] += colors.purple("*");
-		} else {
-			parts.push(colors.purple("*"));
-		}
+	if (git.dirty) {
+		parts[0] += colors.purple("*");
 	}
 
 	const changeParts: string[] = [];
+	const totalAdded = git.staged.added + git.unstaged.added;
+	const totalDeleted = git.staged.deleted + git.unstaged.deleted;
+	if (totalAdded > 0) changeParts.push(colors.green(`+${totalAdded}`));
+	if (totalDeleted > 0) changeParts.push(colors.red(`-${totalDeleted}`));
+	if (git.staged.files > 0) changeParts.push(colors.gray(`~${git.staged.files}`));
+	if (git.unstaged.files > 0) changeParts.push(colors.yellow(`~${git.unstaged.files}`));
 
-	if (config.showChanges) {
-		const totalAdded = git.staged.added + git.unstaged.added;
-		const totalDeleted = git.staged.deleted + git.unstaged.deleted;
-		if (totalAdded > 0) changeParts.push(colors.green(`+${totalAdded}`));
-		if (totalDeleted > 0) changeParts.push(colors.red(`-${totalDeleted}`));
-	}
-
-	if (config.showStaged && git.staged.files > 0) {
-		changeParts.push(colors.gray(`~${git.staged.files}`));
-	}
-
-	if (config.showUnstaged && git.unstaged.files > 0) {
-		changeParts.push(colors.yellow(`~${git.unstaged.files}`));
-	}
-
-	if (changeParts.length > 0) {
-		parts.push(changeParts.join(" "));
-	}
+	if (changeParts.length > 0) parts.push(changeParts.join(" "));
 
 	return parts.join(" ");
 }
@@ -158,70 +142,28 @@ function formatSessionPart(
 	durationMs: number,
 	contextTokens: number | null,
 	contextPercentage: number | null,
-	maxTokens: number,
-	config: StatuslineConfig["session"],
 ): string {
-	// No context data yet - show placeholder
 	if (contextTokens === null || contextPercentage === null) {
 		return `${colors.gray("S:")} ${colors.gray("-")}`;
 	}
 
 	const items: string[] = [];
 
-	if (config.cost.enabled) {
-		const formattedCost = formatCost(cost, config.cost.format);
-		items.push(`${colors.gray("$")}${colors.dimWhite(formattedCost)}`);
-	}
+	items.push(`${colors.gray("$")}${colors.dimWhite(formatCost(cost, COST_FORMAT))}`);
+	items.push(formatTokens(contextTokens, false));
 
-	if (config.tokens.enabled) {
-		const formattedUsed = formatTokens(
-			contextTokens,
-			config.tokens.showDecimals,
-		);
-		if (config.tokens.showMax) {
-			const formattedMax = formatTokens(maxTokens, config.tokens.showDecimals);
-			items.push(`${formattedUsed}${colors.gray("/")}${formattedMax}`);
-		} else {
-			items.push(formattedUsed);
-		}
-	}
+	const bar = formatProgressBar({
+		percentage: contextPercentage,
+		length: 10,
+		style: "braille",
+		colorMode: "progressive",
+		background: "none",
+	});
+	items.push(`${bar} ${colors.lightGray(contextPercentage.toString())}${colors.gray("%")}`);
 
-	if (config.percentage.enabled) {
-		const pctParts: string[] = [];
+	items.push(colors.gray(`(${formatDuration(durationMs)})`));
 
-		if (config.percentage.progressBar.enabled) {
-			pctParts.push(
-				formatProgressBar({
-					percentage: contextPercentage,
-					length: config.percentage.progressBar.length,
-					style: config.percentage.progressBar.style,
-					colorMode: config.percentage.progressBar.color,
-					background: config.percentage.progressBar.background,
-				}),
-			);
-		}
-
-		if (config.percentage.showValue) {
-			pctParts.push(
-				`${colors.lightGray(contextPercentage.toString())}${colors.gray("%")}`,
-			);
-		}
-
-		if (pctParts.length > 0) {
-			items.push(pctParts.join(" "));
-		}
-	}
-
-	if (config.duration.enabled) {
-		items.push(colors.gray(`(${formatDuration(durationMs)})`));
-	}
-
-	if (items.length === 0) return "";
-
-	const sep = config.infoSeparator
-		? ` ${colors.gray(config.infoSeparator)} `
-		: " ";
-	return `${colors.gray("S:")} ${items.join(sep)}`;
+	return `${colors.gray("S:")} ${items.join(" ")}`;
 }
 
 function colorForUsagePct(pct: number): (text: string | number) => string {
@@ -234,66 +176,25 @@ function colorForUsagePct(pct: number): (text: string | number) => string {
 function formatLimitsPart(
 	fiveHour: UsageLimit | null,
 	periodCost: number,
-	config: StatuslineConfig["limits"],
 ): string {
-	if (!config.enabled || !fiveHour) return "";
+	if (!fiveHour) return "";
 
 	const parts: string[] = [];
 
-	if (config.cost.enabled && periodCost > 0) {
+	if (periodCost > 0) {
 		parts.push(
-			`${colors.gray("$")}${colors.dimWhite(formatCost(periodCost, config.cost.format))}`,
+			`${colors.gray("$")}${colors.dimWhite(formatCost(periodCost, COST_FORMAT))}`,
 		);
 	}
 
-	if (config.percentage.enabled) {
-		if (config.percentage.progressBar.enabled) {
-			parts.push(
-				formatProgressBar({
-					percentage: fiveHour.utilization,
-					length: config.percentage.progressBar.length,
-					style: config.percentage.progressBar.style,
-					colorMode: config.percentage.progressBar.color,
-					background: config.percentage.progressBar.background,
-				}),
-			);
-		}
+	const pctColor = colorForUsagePct(fiveHour.utilization);
+	parts.push(`${pctColor(fiveHour.utilization.toString())}${colors.gray("%")}`);
 
-		if (config.percentage.showValue) {
-			const pctColor = colorForUsagePct(fiveHour.utilization);
-			parts.push(
-				`${pctColor(fiveHour.utilization.toString())}${colors.gray("%")}`,
-			);
-		}
-	}
-
-	if (config.showPacingDelta && fiveHour.resets_at) {
-		const delta = calculateFiveHourDelta(
-			fiveHour.utilization,
-			fiveHour.resets_at,
-		);
-		parts.push(
-			`${colors.gray("(")}${formatPacingDelta(delta)}${colors.gray(")")}`,
-		);
-	}
-
-	if (config.showTimeLeft && fiveHour.resets_at) {
+	if (fiveHour.resets_at) {
 		parts.push(colors.gray(`(${formatResetTime(fiveHour.resets_at)})`));
 	}
 
 	return parts.length > 0 ? `${colors.gray("5h")} ${parts.join(" ")}` : "";
-}
-
-function shouldShowWeekly(
-	config: StatuslineConfig["weeklyUsage"],
-	fiveHourUtilization: number | null,
-): boolean {
-	if (config.enabled === true) return true;
-	if (config.enabled === false) return false;
-	if (config.enabled === "90%" && fiveHourUtilization !== null) {
-		return fiveHourUtilization >= 90;
-	}
-	return false;
 }
 
 function calculateWeeklyDelta(
@@ -301,14 +202,12 @@ function calculateWeeklyDelta(
 	resetsAt: string | null,
 ): number {
 	if (!resetsAt) return 0;
-
 	const resetDate = new Date(resetsAt);
 	const now = new Date();
 	const diffMs = resetDate.getTime() - now.getTime();
 	const hoursRemaining = Math.max(0, diffMs / 3600000);
 	const timeElapsedPercent =
 		((WEEKLY_HOURS - hoursRemaining) / WEEKLY_HOURS) * 100;
-
 	return utilization - timeElapsedPercent;
 }
 
@@ -322,89 +221,44 @@ function formatPacingDelta(delta: number): string {
 	return colors.red(value);
 }
 
-function calculateFiveHourDelta(
-	utilization: number,
-	resetsAt: string | null,
-): number {
-	if (!resetsAt) return 0;
-
-	const resetDate = new Date(resetsAt);
-	const now = new Date();
-	const diffMs = resetDate.getTime() - now.getTime();
-	const minutesRemaining = Math.max(0, diffMs / 60000);
-	const timeElapsedPercent =
-		((FIVE_HOUR_MINUTES - minutesRemaining) / FIVE_HOUR_MINUTES) * 100;
-
-	return utilization - timeElapsedPercent;
-}
-
 function formatWeeklyPart(
 	sevenDay: UsageLimit | null,
-	fiveHourUtilization: number | null,
 	weekCost: number,
-	config: StatuslineConfig["weeklyUsage"],
 ): string {
-	if (!shouldShowWeekly(config, fiveHourUtilization) || !sevenDay) return "";
+	if (!sevenDay) return "";
 
 	const parts: string[] = [];
 
-	if (config.cost.enabled && weekCost > 0) {
+	if (weekCost > 0) {
 		parts.push(
-			`${colors.gray("$")}${colors.dimWhite(formatCost(weekCost, config.cost.format))}`,
+			`${colors.gray("$")}${colors.dimWhite(formatCost(weekCost, COST_FORMAT))}`,
 		);
 	}
 
-	if (config.percentage.enabled) {
-		if (config.percentage.progressBar.enabled) {
-			parts.push(
-				formatProgressBar({
-					percentage: sevenDay.utilization,
-					length: config.percentage.progressBar.length,
-					style: config.percentage.progressBar.style,
-					colorMode: config.percentage.progressBar.color,
-					background: config.percentage.progressBar.background,
-				}),
-			);
-		}
+	const pctColor = colorForUsagePct(sevenDay.utilization);
+	parts.push(`${pctColor(sevenDay.utilization.toString())}${colors.gray("%")}`);
 
-		if (config.percentage.showValue) {
-			const pctColor = colorForUsagePct(sevenDay.utilization);
-			parts.push(
-				`${pctColor(sevenDay.utilization.toString())}${colors.gray("%")}`,
-			);
-		}
-	}
-
-	if (config.showPacingDelta && sevenDay.resets_at) {
-		const delta = calculateWeeklyDelta(
-			sevenDay.utilization,
-			sevenDay.resets_at,
-		);
+	if (sevenDay.resets_at) {
+		const delta = calculateWeeklyDelta(sevenDay.utilization, sevenDay.resets_at);
 		parts.push(
 			`${colors.gray("(")}${formatPacingDelta(delta)}${colors.gray(")")}`,
 		);
-	}
 
-	if (config.showTimeLeft && sevenDay.resets_at) {
 		parts.push(colors.gray(`(${formatResetTime(sevenDay.resets_at)})`));
 	}
 
 	return parts.length > 0 ? `${colors.gray("7d")} ${parts.join(" ")}` : "";
 }
 
-function formatDailyPart(
-	todayCost: number,
-	config: StatuslineConfig["dailySpend"],
-): string {
-	if (!config.cost.enabled || todayCost <= 0) return "";
-	return `${colors.gray("D:")} ${colors.gray("$")}${colors.dimWhite(formatCost(todayCost, config.cost.format))}`;
+function formatDailyPart(todayCost: number): string {
+	if (todayCost <= 0) return "";
+	return `${colors.gray("D:")} ${colors.gray("$")}${colors.dimWhite(formatCost(todayCost, COST_FORMAT))}`;
 }
 
 function formatTokenBreakdownPart(
 	data: TokenBreakdownData | null | undefined,
-	config: StatuslineConfig["tokenBreakdown"],
 ): string {
-	if (!config?.enabled || !data || data.totalCost <= 0) return "";
+	if (!data || data.totalCost <= 0) return "";
 
 	const TOKEN_PRICES = {
 		input: 3,
@@ -413,72 +267,47 @@ function formatTokenBreakdownPart(
 		cacheRead: 0.30,
 	} as const;
 
-	function tokenCostPct(
-		tokens: number,
-		pricePerMTok: number,
-		totalCost: number,
-	): number {
-		if (totalCost <= 0) return 0;
+	function tokenCostPct(tokens: number, pricePerMTok: number): number {
+		if (data!.totalCost <= 0) return 0;
 		return Math.round(
-			((tokens * pricePerMTok) / 1_000_000 / totalCost) * 100,
+			((tokens * pricePerMTok) / 1_000_000 / data!.totalCost) * 100,
 		);
 	}
 
-	const inPct = tokenCostPct(
-		data.inputTokens,
-		TOKEN_PRICES.input,
-		data.totalCost,
-	);
-	const outPct = tokenCostPct(
-		data.outputTokens,
-		TOKEN_PRICES.output,
-		data.totalCost,
-	);
-	const cwPct = tokenCostPct(
-		data.cacheCreationTokens,
-		TOKEN_PRICES.cacheWrite,
-		data.totalCost,
-	);
-	const crPct = tokenCostPct(
-		data.cacheReadTokens,
-		TOKEN_PRICES.cacheRead,
-		data.totalCost,
-	);
+	const inPct = tokenCostPct(data.inputTokens, TOKEN_PRICES.input);
+	const outPct = tokenCostPct(data.outputTokens, TOKEN_PRICES.output);
+	const cwPct = tokenCostPct(data.cacheCreationTokens, TOKEN_PRICES.cacheWrite);
+	const crPct = tokenCostPct(data.cacheReadTokens, TOKEN_PRICES.cacheRead);
 
 	const breakdownStr = `in:${inPct}% out:${outPct}% cw:${cwPct}% cr:${crPct}%`;
 	const parts = [breakdownStr];
 
 	if (data.burnRatePerHour > 0) {
-		const burnStr = `🔥 $${data.burnRatePerHour.toFixed(1)}/h → $${data.blockProjectionCost.toFixed(0)}`;
-		parts.push(burnStr);
+		parts.push(`🔥 $${data.burnRatePerHour.toFixed(1)}/h → $${data.blockProjectionCost.toFixed(0)}`);
 	}
 
 	return `${colors.gray("T:")} ${parts.join(` ${colors.gray("·")} `)}`;
 }
 
 // ─────────────────────────────────────────────────────────────
-// MAIN RENDER FUNCTION - Raw data + config = output
+// MAIN RENDER FUNCTION
 // ─────────────────────────────────────────────────────────────
 
-export function renderStatuslineRaw(
-	data: RawStatuslineData,
-	config: StatuslineConfig,
-): string {
-	const sep = colors.gray(config.separator);
+export function renderStatuslineRaw(data: RawStatuslineData): string {
+	const sep = colors.gray(SEP);
 	const sections: string[] = [];
 
 	// Line 1: Git + Path + Model
 	const line1Parts: string[] = [];
 
-	const gitPart = formatGitPart(data.git, config.git);
+	const gitPart = formatGitPart(data.git);
 	if (gitPart) line1Parts.push(gitPart);
 
-	const pathPart = formatPath(data.path, config.pathDisplayMode);
-	line1Parts.push(colors.gray(pathPart));
+	line1Parts.push(colors.gray(formatPath(data.path, PATH_MODE)));
 
 	const isSonnet = data.modelName.toLowerCase().includes("sonnet");
-	if (!isSonnet || config.showSonnetModel) {
-		let modelDisplay = colors.peach(data.modelName);
+	let modelDisplay = colors.peach(data.modelName);
+	if (!isSonnet || true) { // always show model
 		if (data.contextWindowSize) {
 			modelDisplay += ` ${colors.gray(`(${formatContextWindowSize(data.contextWindowSize)} context)`)}`;
 		}
@@ -493,42 +322,30 @@ export function renderStatuslineRaw(
 		data.durationMs,
 		data.contextTokens,
 		data.contextPercentage,
-		config.context.maxContextTokens,
-		config.session,
 	);
 	if (sessionPart) sections.push(sessionPart);
 
-	// Limits
+	// 5h limit
 	const limitsPart = formatLimitsPart(
 		data.usageLimits?.five_hour ?? null,
 		data.periodCost ?? 0,
-		config.limits,
 	);
 	if (limitsPart) sections.push(limitsPart);
 
-	// Weekly
+	// 7d weekly
 	const weeklyPart = formatWeeklyPart(
 		data.usageLimits?.seven_day ?? null,
-		data.usageLimits?.five_hour?.utilization ?? null,
 		data.weekCost ?? 0,
-		config.weeklyUsage,
 	);
 	if (weeklyPart) sections.push(weeklyPart);
 
 	// Daily
-	const dailyPart = formatDailyPart(data.todayCost ?? 0, config.dailySpend);
+	const dailyPart = formatDailyPart(data.todayCost ?? 0);
 	if (dailyPart) sections.push(dailyPart);
 
 	// Token breakdown
-	const tokenBreakdownPart = formatTokenBreakdownPart(
-		data.tokenBreakdown,
-		config.tokenBreakdown,
-	);
+	const tokenBreakdownPart = formatTokenBreakdownPart(data.tokenBreakdown);
 	if (tokenBreakdownPart) sections.push(tokenBreakdownPart);
-
-	const output = sections.join(` ${sep} `);
-
-	if (config.oneLine) return output;
 
 	// Two-line mode: break after line1
 	const line1 = sections[0];
@@ -540,15 +357,10 @@ export function renderStatuslineRaw(
 // LEGACY SUPPORT - For backwards compatibility with old data format
 // ─────────────────────────────────────────────────────────────
 
-export function renderStatusline(
-	data: StatuslineData,
-	config: StatuslineConfig,
-): string {
-	// Convert legacy format to raw format
-	// Parse pre-formatted values back to raw (best effort)
+export function renderStatusline(data: StatuslineData): string {
 	const rawData: RawStatuslineData = {
 		git: parseGitFromBranch(data.branch),
-		path: data.dirPath.startsWith("~") ? data.dirPath : data.dirPath,
+		path: data.dirPath,
 		modelName: data.modelName,
 		contextWindowSize: data.contextWindowSize,
 		cost: parseFloat(data.sessionCost.replace(/[$,]/g, "")) || 0,
@@ -562,14 +374,12 @@ export function renderStatusline(
 		tokenBreakdown: data.tokenBreakdown,
 	};
 
-	return renderStatuslineRaw(rawData, config);
+	return renderStatuslineRaw(rawData);
 }
 
-// Helper to parse legacy branch string back to git data
 function parseGitFromBranch(branch: string): RawGitData | null {
 	if (!branch) return null;
 
-	// Parse "main* +10 -5" format
 	const dirty = branch.includes("*");
 	const branchName =
 		branch.replace(/\*.*$/, "").replace(/\*/, "").trim() || "main";
@@ -595,12 +405,11 @@ function parseGitFromBranch(branch: string): RawGitData | null {
 	};
 }
 
-// Helper to parse "12m" or "1h 30m" back to ms
 function parseDurationToMs(duration: string): number {
 	let ms = 0;
 	const hourMatch = duration.match(/(\d+)h/);
 	const minMatch = duration.match(/(\d+)m/);
 	if (hourMatch) ms += parseInt(hourMatch[1], 10) * 3600000;
 	if (minMatch) ms += parseInt(minMatch[1], 10) * 60000;
-	return ms || 720000; // Default 12 minutes
+	return ms || 720000;
 }

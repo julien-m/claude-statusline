@@ -1,14 +1,27 @@
 import { homedir } from "node:os";
 import { sep } from "node:path";
 import pc from "picocolors";
-import type {
-	CostFormat,
-	ProgressBarBackground,
-	ProgressBarColor,
-	ProgressBarStyle,
-	StatuslineConfig,
-} from "./config-types";
 import type { GitStatus } from "./git";
+
+export type CostFormat = "integer" | "decimal1" | "decimal2";
+export type ProgressBarStyle = "filled" | "rectangle" | "braille";
+export type ProgressBarColor =
+	| "progressive"
+	| "green"
+	| "yellow"
+	| "red"
+	| "peach"
+	| "black"
+	| "white";
+export type ProgressBarBackground =
+	| "none"
+	| "dark"
+	| "gray"
+	| "light"
+	| "blue"
+	| "purple"
+	| "cyan"
+	| "peach";
 
 type ColorFunction = (text: string | number) => string;
 
@@ -51,46 +64,23 @@ export const colors = {
 	inverse: pico.inverse as ColorFunction,
 } as const;
 
-export function formatBranch(
-	git: GitStatus,
-	gitConfig: StatuslineConfig["git"],
-): string {
-	let result = "";
-
-	if (gitConfig.showBranch) {
-		result = colors.lightGray(git.branch);
-	}
+export function formatBranch(git: GitStatus): string {
+	let result = colors.lightGray(git.branch);
 
 	if (git.hasChanges) {
+		result += colors.purple("*");
+
 		const changes: string[] = [];
+		const totalAdded = git.staged.added + git.unstaged.added;
+		const totalDeleted = git.staged.deleted + git.unstaged.deleted;
 
-		if (gitConfig.showDirtyIndicator) {
-			result += colors.purple("*");
-		}
-
-		if (gitConfig.showChanges) {
-			const totalAdded = git.staged.added + git.unstaged.added;
-			const totalDeleted = git.staged.deleted + git.unstaged.deleted;
-
-			if (totalAdded > 0) {
-				changes.push(colors.green(`+${totalAdded}`));
-			}
-			if (totalDeleted > 0) {
-				changes.push(colors.red(`-${totalDeleted}`));
-			}
-		}
-
-		if (gitConfig.showStaged && git.staged.files > 0) {
-			changes.push(colors.gray(`~${git.staged.files}`));
-		}
-
-		if (gitConfig.showUnstaged && git.unstaged.files > 0) {
+		if (totalAdded > 0) changes.push(colors.green(`+${totalAdded}`));
+		if (totalDeleted > 0) changes.push(colors.red(`-${totalDeleted}`));
+		if (git.staged.files > 0) changes.push(colors.gray(`~${git.staged.files}`));
+		if (git.unstaged.files > 0)
 			changes.push(colors.yellow(`~${git.unstaged.files}`));
-		}
 
-		if (changes.length > 0) {
-			result += ` ${changes.join(" ")}`;
-		}
+		if (changes.length > 0) result += ` ${changes.join(" ")}`;
 	}
 
 	return result;
@@ -308,7 +298,7 @@ export function formatProgressBar({
 	background,
 }: {
 	percentage: number;
-	length: 5 | 10 | 15;
+	length: number;
 	style: ProgressBarStyle;
 	colorMode: ProgressBarColor;
 	background: ProgressBarBackground;
@@ -325,67 +315,4 @@ export function formatProgressBar({
 		return formatProgressBarBraille(percentage, length, colorMode, background);
 	}
 	return formatProgressBarFilled(percentage, length, colorMode, background);
-}
-
-export function formatSession(
-	cost: string,
-	duration: string,
-	tokensUsed: number,
-	tokensMax: number,
-	percentage: number,
-	config: StatuslineConfig["session"],
-): string {
-	const sessionItems: string[] = [];
-
-	if (config.cost.enabled) {
-		sessionItems.push(`${colors.gray("$")}${colors.dimWhite(cost)}`);
-	}
-
-	if (config.tokens.enabled) {
-		const formattedUsed = formatTokens(tokensUsed, config.tokens.showDecimals);
-		if (config.tokens.showMax) {
-			const formattedMax = formatTokens(tokensMax, config.tokens.showDecimals);
-			sessionItems.push(`${formattedUsed}${colors.gray("/")}${formattedMax}`);
-		} else {
-			sessionItems.push(formattedUsed);
-		}
-	}
-
-	if (config.percentage.enabled) {
-		const parts: string[] = [];
-
-		if (config.percentage.progressBar.enabled) {
-			const bar = formatProgressBar({
-				percentage,
-				length: config.percentage.progressBar.length,
-				style: config.percentage.progressBar.style,
-				colorMode: config.percentage.progressBar.color,
-				background: config.percentage.progressBar.background,
-			});
-			parts.push(bar);
-		}
-
-		if (config.percentage.showValue) {
-			parts.push(
-				`${colors.lightGray(percentage.toString())}${colors.gray("%")}`,
-			);
-		}
-
-		if (parts.length > 0) {
-			sessionItems.push(parts.join(" "));
-		}
-	}
-
-	if (config.duration.enabled) {
-		sessionItems.push(colors.gray(`(${duration})`));
-	}
-
-	if (sessionItems.length === 0) {
-		return "";
-	}
-
-	const infoSep = config.infoSeparator
-		? ` ${colors.gray(config.infoSeparator)} `
-		: " ";
-	return `${colors.gray("S:")} ${sessionItems.join(infoSep)}`;
 }

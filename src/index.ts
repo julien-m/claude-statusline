@@ -2,7 +2,6 @@
 
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { defaultConfig, type StatuslineConfig } from "./lib/config";
 import { getContextData } from "./lib/context";
 import {
 	colors,
@@ -39,7 +38,6 @@ try {
 	const utilsModule = await import("./lib/utils");
 	normalizeResetsAt = utilsModule.normalizeResetsAt;
 } catch {
-	// Fallback normalizeResetsAt
 	normalizeResetsAt = (resetsAt: string) => resetsAt;
 }
 
@@ -60,7 +58,6 @@ export {
 	type UsageLimit,
 } from "./lib/render-pure";
 
-const CONFIG_FILE_PATH = join(import.meta.dir, "..", "statusline.config.json");
 const LAST_PAYLOAD_PATH = join(
 	import.meta.dir,
 	"..",
@@ -68,14 +65,12 @@ const LAST_PAYLOAD_PATH = join(
 	"last_payload.txt",
 );
 
-async function loadConfig(): Promise<StatuslineConfig> {
-	try {
-		const content = await readFile(CONFIG_FILE_PATH, "utf-8");
-		return JSON.parse(content);
-	} catch {
-		return defaultConfig;
-	}
-}
+// Context window configuration
+const USE_PAYLOAD_CONTEXT = true;
+const MAX_CONTEXT_TOKENS = 200000;
+const AUTOCOMPACT_BUFFER_TOKENS = 45000;
+const USE_USABLE_CONTEXT_ONLY = true;
+const OVERHEAD_TOKENS = 0;
 
 async function main() {
 	try {
@@ -83,8 +78,6 @@ async function main() {
 
 		// Save last payload for debugging
 		await writeFile(LAST_PAYLOAD_PATH, JSON.stringify(input, null, 2));
-
-		const config = await loadConfig();
 
 		// Get usage limits — prefer hook payload (no extra API call), fall back to API
 		let usageLimits: { five_hour: { utilization: number; resets_at: string } | null; seven_day: { utilization: number; resets_at: string } | null };
@@ -120,10 +113,7 @@ async function main() {
 		let contextTokens: number | null;
 		let contextPercentage: number | null;
 
-		const usePayloadContext =
-			config.context.usePayloadContextWindow && input.context_window;
-
-		if (usePayloadContext) {
+		if (USE_PAYLOAD_CONTEXT && input.context_window) {
 			const current = input.context_window?.current_usage;
 			if (current) {
 				contextTokens =
@@ -131,24 +121,22 @@ async function main() {
 					(current.cache_creation_input_tokens || 0) +
 					(current.cache_read_input_tokens || 0);
 				const maxTokens =
-					input.context_window?.context_window_size ||
-					config.context.maxContextTokens;
+					input.context_window?.context_window_size || MAX_CONTEXT_TOKENS;
 				contextPercentage = Math.min(
 					100,
 					Math.round((contextTokens / maxTokens) * 100),
 				);
 			} else {
-				// No context data yet - session not started
 				contextTokens = null;
 				contextPercentage = null;
 			}
 		} else {
 			const contextData = await getContextData({
 				transcriptPath: input.transcript_path,
-				maxContextTokens: config.context.maxContextTokens,
-				autocompactBufferTokens: config.context.autocompactBufferTokens,
-				useUsableContextOnly: config.context.useUsableContextOnly,
-				overheadTokens: config.context.overheadTokens,
+				maxContextTokens: MAX_CONTEXT_TOKENS,
+				autocompactBufferTokens: AUTOCOMPACT_BUFFER_TOKENS,
+				useUsableContextOnly: USE_USABLE_CONTEXT_ONLY,
+				overheadTokens: OVERHEAD_TOKENS,
 			});
 			contextTokens = contextData.tokens;
 			contextPercentage = contextData.percentage;
@@ -170,24 +158,21 @@ async function main() {
 		}
 
 		// Token breakdown — always show last known data if available
-		const today = new Date().toISOString().slice(0, 10); // UTC — consistent with sessions table and ccusage
+		const today = new Date().toISOString().slice(0, 10);
 		let tokenBreakdown: TokenBreakdownData | null = null;
-		if (getDailyTokens && config.tokenBreakdown?.enabled) {
+		if (getDailyTokens) {
 			tokenBreakdown = getDailyTokens(today);
 		}
 
-		// Daily cost from ccusage (more accurate than session accumulation)
+		// Daily cost from ccusage
 		const todayCost = tokenBreakdown?.totalCost ?? 0;
 
 		const data: StatuslineData = {
-			branch: formatBranch(git, config.git),
-			dirPath: formatPath(input.workspace.current_dir, config.pathDisplayMode),
+			branch: formatBranch(git),
+			dirPath: formatPath(input.workspace.current_dir, "truncated"),
 			modelName: input.model.display_name,
 			contextWindowSize: input.context_window?.context_window_size,
-			sessionCost: formatCost(
-				input.cost.total_cost_usd,
-				config.session.cost.format,
-			),
+			sessionCost: formatCost(input.cost.total_cost_usd, "decimal1"),
 			sessionDuration: formatDuration(input.cost.total_duration_ms),
 			contextTokens,
 			contextPercentage,
@@ -213,15 +198,11 @@ async function main() {
 			...(getDailyTokens && { tokenBreakdown }),
 		};
 
-		const output = renderStatusline(data, config);
+		const output = renderStatusline(data);
 		console.log(output);
-		if (config.oneLine) {
-			console.log("");
-		}
 	} catch (error) {
 		const errorMessage = error instanceof Error ? error.message : String(error);
 		console.log(`${colors.red("Error:")} ${errorMessage}`);
-		console.log(colors.gray("Check statusline configuration"));
 	}
 }
 
