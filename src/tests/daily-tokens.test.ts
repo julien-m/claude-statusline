@@ -1,22 +1,34 @@
 import { Database } from "bun:sqlite";
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { existsSync, rmSync } from "node:fs";
-import { join } from "node:path";
-import { getDailyTokens, upsertDailyTokens, type DailyTokensRow } from "../lib/features/spend/index";
+import {
+	getDailyTokens,
+	resetDb,
+	setDb,
+	upsertDailyTokens,
+	type DailyTokensRow,
+} from "../lib/features/spend/index";
 
-const TEST_DB_PATH = join(import.meta.dir, "..", "..", "data", "test-daily-tokens.db");
+function buildRow(overrides: Partial<DailyTokensRow> = {}): DailyTokensRow {
+	return {
+		date: "2026-04-09",
+		inputTokens: 1000,
+		outputTokens: 500,
+		cacheCreationTokens: 100,
+		cacheReadTokens: 50,
+		blockCost: 10.5,
+		blockRemainingMin: 120,
+		blockProjectionCost: 15.75,
+		burnRatePerHour: 2.5,
+		totalCost: 25.0,
+		updatedAt: "2026-04-09T12:00:00.000Z",
+		...overrides,
+	};
+}
 
 describe("Daily Tokens Table", () => {
-	let db: Database;
-
 	beforeEach(() => {
-		if (existsSync(TEST_DB_PATH)) {
-			rmSync(TEST_DB_PATH);
-		}
-
-		db = new Database(TEST_DB_PATH);
+		const db = new Database(":memory:");
 		db.run("PRAGMA journal_mode = WAL");
-
 		db.run(`
 			CREATE TABLE IF NOT EXISTS daily_tokens (
 				date                   TEXT PRIMARY KEY,
@@ -32,229 +44,62 @@ describe("Daily Tokens Table", () => {
 				updated_at             TEXT NOT NULL
 			)
 		`);
+		setDb(db);
 	});
 
 	afterEach(() => {
-		db.close();
-		if (existsSync(TEST_DB_PATH)) {
-			rmSync(TEST_DB_PATH);
-		}
+		resetDb();
 	});
 
-	test("upsert creates new row", () => {
-		const row: DailyTokensRow = {
-			date: "2026-04-09",
-			inputTokens: 1000,
-			outputTokens: 500,
-			cacheCreationTokens: 100,
-			cacheReadTokens: 50,
-			blockCost: 10.5,
-			blockRemainingMin: 120,
-			blockProjectionCost: 15.75,
-			burnRatePerHour: 2.5,
-			totalCost: 25.0,
-			updatedAt: "2026-04-09T12:00:00.000Z",
-		};
+	test("upsert creates a new row", () => {
+		const row = buildRow();
+		upsertDailyTokens(row);
 
-		db.run(
-			`INSERT INTO daily_tokens (
-				date, input_tokens, output_tokens, cache_creation_tokens, cache_read_tokens,
-				block_cost, block_remaining_min, block_projection_cost, burn_rate_per_hour,
-				total_cost, updated_at
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-			[
-				row.date,
-				row.inputTokens,
-				row.outputTokens,
-				row.cacheCreationTokens,
-				row.cacheReadTokens,
-				row.blockCost,
-				row.blockRemainingMin,
-				row.blockProjectionCost,
-				row.burnRatePerHour,
-				row.totalCost,
-				row.updatedAt,
-			],
-		);
-
-		const result = db
-			.query<{
-				date: string;
-				input_tokens: number;
-				output_tokens: number;
-				cache_creation_tokens: number;
-				cache_read_tokens: number;
-				block_cost: number;
-				block_remaining_min: number;
-				block_projection_cost: number;
-				burn_rate_per_hour: number;
-				total_cost: number;
-				updated_at: string;
-			}>("SELECT * FROM daily_tokens WHERE date = ?")
-			.get(row.date);
-
-		expect(result?.date).toBe("2026-04-09");
-		expect(result?.input_tokens).toBe(1000);
-		expect(result?.output_tokens).toBe(500);
-		expect(result?.total_cost).toBe(25.0);
+		const result = getDailyTokens("2026-04-09");
+		expect(result).not.toBeNull();
+		expect(result?.inputTokens).toBe(1000);
+		expect(result?.outputTokens).toBe(500);
+		expect(result?.totalCost).toBe(25.0);
 	});
 
-	test("upsert updates existing row", () => {
-		const date = "2026-04-09";
+	test("upsert updates an existing row (ON CONFLICT)", () => {
+		const initial = buildRow({ totalCost: 10.0, inputTokens: 500 });
+		upsertDailyTokens(initial);
 
-		// Insert initial row
-		db.run(
-			`INSERT INTO daily_tokens (
-				date, input_tokens, output_tokens, cache_creation_tokens, cache_read_tokens,
-				block_cost, block_remaining_min, block_projection_cost, burn_rate_per_hour,
-				total_cost, updated_at
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-			[
-				date,
-				1000,
-				500,
-				100,
-				50,
-				10.5,
-				120,
-				15.75,
-				2.5,
-				25.0,
-				"2026-04-09T12:00:00.000Z",
-			],
-		);
+		const updated = buildRow({ totalCost: 20.0, inputTokens: 1500 });
+		upsertDailyTokens(updated);
 
-		// Update via upsert
-		db.run(
-			`INSERT INTO daily_tokens (
-				date, input_tokens, output_tokens, cache_creation_tokens, cache_read_tokens,
-				block_cost, block_remaining_min, block_projection_cost, burn_rate_per_hour,
-				total_cost, updated_at
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-			ON CONFLICT(date) DO UPDATE SET
-				input_tokens = excluded.input_tokens,
-				output_tokens = excluded.output_tokens,
-				cache_creation_tokens = excluded.cache_creation_tokens,
-				cache_read_tokens = excluded.cache_read_tokens,
-				block_cost = excluded.block_cost,
-				block_remaining_min = excluded.block_remaining_min,
-				block_projection_cost = excluded.block_projection_cost,
-				burn_rate_per_hour = excluded.burn_rate_per_hour,
-				total_cost = excluded.total_cost,
-				updated_at = excluded.updated_at`,
-			[
-				date,
-				1500,
-				750,
-				150,
-				75,
-				15.5,
-				90,
-				25.0,
-				3.5,
-				50.0,
-				"2026-04-09T13:00:00.000Z",
-			],
-		);
-
-		const result = db
-			.query<{
-				input_tokens: number;
-				output_tokens: number;
-				total_cost: number;
-				updated_at: string;
-			}>("SELECT input_tokens, output_tokens, total_cost, updated_at FROM daily_tokens WHERE date = ?")
-			.get(date);
-
-		expect(result?.input_tokens).toBe(1500);
-		expect(result?.output_tokens).toBe(750);
-		expect(result?.total_cost).toBe(50.0);
-		expect(result?.updated_at).toBe("2026-04-09T13:00:00.000Z");
+		const result = getDailyTokens("2026-04-09");
+		expect(result?.totalCost).toBe(20.0);
+		expect(result?.inputTokens).toBe(1500);
 	});
 
-	test("get returns row when it exists", () => {
-		const date = "2026-04-09";
-
-		db.run(
-			`INSERT INTO daily_tokens (
-				date, input_tokens, output_tokens, cache_creation_tokens, cache_read_tokens,
-				block_cost, block_remaining_min, block_projection_cost, burn_rate_per_hour,
-				total_cost, updated_at
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-			[
-				date,
-				1000,
-				500,
-				100,
-				50,
-				10.5,
-				120,
-				15.75,
-				2.5,
-				25.0,
-				"2026-04-09T12:00:00.000Z",
-			],
-		);
-
-		const result = db
-			.query<{
-				date: string;
-				input_tokens: number;
-				output_tokens: number;
-				cache_creation_tokens: number;
-				cache_read_tokens: number;
-				block_cost: number;
-				block_remaining_min: number;
-				block_projection_cost: number;
-				burn_rate_per_hour: number;
-				total_cost: number;
-				updated_at: string;
-			}>(
-				"SELECT date, input_tokens, output_tokens, cache_creation_tokens, cache_read_tokens, block_cost, block_remaining_min, block_projection_cost, burn_rate_per_hour, total_cost, updated_at FROM daily_tokens WHERE date = ?",
-			)
-			.get(date);
-
-		expect(result?.date).toBe("2026-04-09");
-		expect(result?.inputTokens).toBeUndefined();
-		expect(result?.input_tokens).toBe(1000);
-		expect(result?.total_cost).toBe(25.0);
-	});
-
-	test("get returns null when row does not exist", () => {
-		const result = db
-			.query<{ date: string }>(
-				"SELECT * FROM daily_tokens WHERE date = ?",
-			)
-			.get("2026-04-09");
-
+	test("getDailyTokens returns null for missing date", () => {
+		const result = getDailyTokens("1999-01-01");
 		expect(result).toBeNull();
 	});
 
-	test("interface has correct structure", () => {
-		const row: DailyTokensRow = {
-			date: "2026-04-09",
-			inputTokens: 1000,
-			outputTokens: 500,
-			cacheCreationTokens: 100,
-			cacheReadTokens: 50,
-			blockCost: 10.5,
-			blockRemainingMin: 120,
-			blockProjectionCost: 15.75,
-			burnRatePerHour: 2.5,
-			totalCost: 25.0,
-			updatedAt: "2026-04-09T12:00:00.000Z",
-		};
+	test("getDailyTokens maps column names to camelCase correctly", () => {
+		const row = buildRow({
+			cacheCreationTokens: 200,
+			cacheReadTokens: 300,
+			burnRatePerHour: 5.5,
+			blockProjectionCost: 99.9,
+		});
+		upsertDailyTokens(row);
 
-		expect(row.date).toBe("2026-04-09");
-		expect(row.inputTokens).toBe(1000);
-		expect(row.outputTokens).toBe(500);
-		expect(row.cacheCreationTokens).toBe(100);
-		expect(row.cacheReadTokens).toBe(50);
-		expect(row.blockCost).toBe(10.5);
-		expect(row.blockRemainingMin).toBe(120);
-		expect(row.blockProjectionCost).toBe(15.75);
-		expect(row.burnRatePerHour).toBe(2.5);
-		expect(row.totalCost).toBe(25.0);
-		expect(row.updatedAt).toBe("2026-04-09T12:00:00.000Z");
+		const result = getDailyTokens("2026-04-09");
+		expect(result?.cacheCreationTokens).toBe(200);
+		expect(result?.cacheReadTokens).toBe(300);
+		expect(result?.burnRatePerHour).toBe(5.5);
+		expect(result?.blockProjectionCost).toBe(99.9);
+	});
+
+	test("upsert of different dates are independent", () => {
+		upsertDailyTokens(buildRow({ date: "2026-04-08", totalCost: 5.0 }));
+		upsertDailyTokens(buildRow({ date: "2026-04-09", totalCost: 10.0 }));
+
+		expect(getDailyTokens("2026-04-08")?.totalCost).toBe(5.0);
+		expect(getDailyTokens("2026-04-09")?.totalCost).toBe(10.0);
 	});
 });
