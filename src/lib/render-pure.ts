@@ -89,6 +89,7 @@ export interface StatuslineData {
 	periodCost?: number;
 	todayCost?: number;
 	weekCost?: number;
+	tokenBreakdown?: TokenBreakdownData | null;
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -549,6 +550,7 @@ export function renderStatusline(
 		periodCost: data.periodCost,
 		todayCost: data.todayCost,
 		weekCost: data.weekCost,
+		tokenBreakdown: data.tokenBreakdown,
 	};
 
 	return renderStatuslineRaw(rawData, config);
