@@ -35,8 +35,8 @@ try {
 }
 
 try {
-	const utilsModule = await import("./lib/utils");
-	normalizeResetsAt = utilsModule.normalizeResetsAt;
+	const periodModule = await import("./lib/period");
+	normalizeResetsAt = periodModule.normalizeResetsAt;
 } catch {
 	normalizeResetsAt = (resetsAt: string) => resetsAt;
 }
