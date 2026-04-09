@@ -1,0 +1,10 @@
+# Ignore all data files
+*.db
+*.db-shm
+*.db-wal
+*.json
+
+# But keep this .gitignore
+!.gitignore
+
+last_payload.txt
