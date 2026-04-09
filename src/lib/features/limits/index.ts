@@ -11,6 +11,20 @@ export interface UsageLimitsResult {
 	seven_day: UsageLimitData | null;
 }
 
+interface OAuthUsagePeriod {
+	utilization?: number;
+	resets_at?: string | null;
+}
+
+interface OAuthUsageData {
+	five_hour?: OAuthUsagePeriod;
+	seven_day?: OAuthUsagePeriod;
+}
+
+function isOAuthUsageData(data: unknown): data is OAuthUsageData {
+	return typeof data === "object" && data !== null;
+}
+
 async function getOAuthToken(): Promise<string | null> {
 	try {
 		if (platform() === "darwin") {
@@ -55,7 +69,9 @@ export async function getUsageLimits(): Promise<UsageLimitsResult> {
 
 		if (!response.ok) return { five_hour: null, seven_day: null };
 
-		const data = await response.json();
+		const raw: unknown = await response.json();
+		if (!isOAuthUsageData(raw)) return { five_hour: null, seven_day: null };
+		const data: OAuthUsageData = raw;
 
 		return {
 			five_hour: data.five_hour
