@@ -43,9 +43,11 @@ function main() {
 		return;
 	}
 
-	const totalCost = dailyData.reduce((sum, d) => sum + d.total_cost, 0);
+	type DailyRow = { date: string; total_cost: number; session_count: number; total_duration: number };
+
+	const totalCost = dailyData.reduce((sum: number, d: DailyRow) => sum + d.total_cost, 0);
 	const totalSessions = dailyData.reduce(
-		(sum, d) => sum + d.session_count,
+		(sum: number, d: DailyRow) => sum + d.session_count,
 		0,
 	);
 
@@ -53,7 +55,7 @@ function main() {
 		pico.bold(`\nSpend for ${monthName}  —  $${totalCost.toFixed(2)} total\n`),
 	);
 
-	const rows = dailyData.map((d) => {
+	const rows = dailyData.map((d: DailyRow) => {
 		const dayOfWeek = new Date(`${d.date}T12:00:00`).toLocaleString(
 			"default",
 			{ weekday: "short" },
@@ -64,7 +66,7 @@ function main() {
 		const durationStr = hours > 0 ? `${hours}h ${m}m` : `${m}m`;
 
 		// Cost bar visualization
-		const maxCost = Math.max(...dailyData.map((x) => x.total_cost));
+		const maxCost = Math.max(...dailyData.map((x: DailyRow) => x.total_cost));
 		const barLength = Math.round((d.total_cost / maxCost) * 20);
 		const bar = "█".repeat(barLength);
 
