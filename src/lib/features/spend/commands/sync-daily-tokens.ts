@@ -28,6 +28,24 @@ interface CcusageBlocksResponse {
 	blocks: CcusageBlock[];
 }
 
+function isCcusageDailyResponse(data: unknown): data is CcusageDailyResponse {
+	return (
+		typeof data === "object" &&
+		data !== null &&
+		"totals" in data &&
+		typeof (data as CcusageDailyResponse).totals === "object"
+	);
+}
+
+function isCcusageBlocksResponse(data: unknown): data is CcusageBlocksResponse {
+	return (
+		typeof data === "object" &&
+		data !== null &&
+		"blocks" in data &&
+		Array.isArray((data as CcusageBlocksResponse).blocks)
+	);
+}
+
 async function runCcusage(args: string[]): Promise<unknown> {
 	const proc = Bun.spawn(["ccusage", ...args], {
 		stdout: "pipe",
@@ -52,24 +70,18 @@ async function main(): Promise<void> {
 		.replace(/-/g, "");
 
 	// Fetch daily tokens for today
-	const dailyResponse = (await runCcusage([
-		"daily",
-		"--since",
-		today,
-		"--until",
-		today,
-		"--json",
-		"--offline",
-	])) as CcusageDailyResponse;
+	const dailyRaw = await runCcusage(["daily", "--since", today, "--until", today, "--json", "--offline"]);
+	if (!isCcusageDailyResponse(dailyRaw)) {
+		throw new Error("Unexpected ccusage daily response format");
+	}
+	const dailyResponse: CcusageDailyResponse = dailyRaw;
 
 	// Fetch blocks since yesterday to catch cross-midnight active blocks
-	const blocksResponse = (await runCcusage([
-		"blocks",
-		"--since",
-		yesterday,
-		"--json",
-		"--offline",
-	])) as CcusageBlocksResponse;
+	const blocksRaw = await runCcusage(["blocks", "--since", yesterday, "--json", "--offline"]);
+	if (!isCcusageBlocksResponse(blocksRaw)) {
+		throw new Error("Unexpected ccusage blocks response format");
+	}
+	const blocksResponse: CcusageBlocksResponse = blocksRaw;
 
 	// Find first active block
 	const activeBlock = blocksResponse.blocks.find((b) => b.isActive);
