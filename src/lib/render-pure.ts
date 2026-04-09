@@ -23,6 +23,13 @@ const PATH_MODE = "truncated" as const;
 const COST_FORMAT = "decimal1" as const;
 const MAX_CONTEXT_TOKENS = 200000;
 
+const TOKEN_PRICES = {
+	input: 3,
+	output: 15,
+	cacheWrite: 3.75,
+	cacheRead: 0.30,
+} as const;
+
 const WEEKLY_HOURS = 168; // 7 days * 24 hours
 const FIVE_HOUR_MINUTES = 300; // 5 hours * 60 minutes
 
@@ -255,29 +262,20 @@ function formatDailyPart(todayCost: number): string {
 	return `${colors.gray("D:")} ${colors.gray("$")}${colors.dimWhite(formatCost(todayCost, COST_FORMAT))}`;
 }
 
+function tokenCostPct(tokens: number, pricePerMTok: number, totalCost: number): number {
+	if (totalCost <= 0) return 0;
+	return Math.round(((tokens * pricePerMTok) / 1_000_000 / totalCost) * 100);
+}
+
 function formatTokenBreakdownPart(
 	data: TokenBreakdownData | null | undefined,
 ): string {
 	if (!data || data.totalCost <= 0) return "";
 
-	const TOKEN_PRICES = {
-		input: 3,
-		output: 15,
-		cacheWrite: 3.75,
-		cacheRead: 0.30,
-	} as const;
-
-	function tokenCostPct(tokens: number, pricePerMTok: number): number {
-		if (data!.totalCost <= 0) return 0;
-		return Math.round(
-			((tokens * pricePerMTok) / 1_000_000 / data!.totalCost) * 100,
-		);
-	}
-
-	const inPct = tokenCostPct(data.inputTokens, TOKEN_PRICES.input);
-	const outPct = tokenCostPct(data.outputTokens, TOKEN_PRICES.output);
-	const cwPct = tokenCostPct(data.cacheCreationTokens, TOKEN_PRICES.cacheWrite);
-	const crPct = tokenCostPct(data.cacheReadTokens, TOKEN_PRICES.cacheRead);
+	const inPct = tokenCostPct(data.inputTokens, TOKEN_PRICES.input, data.totalCost);
+	const outPct = tokenCostPct(data.outputTokens, TOKEN_PRICES.output, data.totalCost);
+	const cwPct = tokenCostPct(data.cacheCreationTokens, TOKEN_PRICES.cacheWrite, data.totalCost);
+	const crPct = tokenCostPct(data.cacheReadTokens, TOKEN_PRICES.cacheRead, data.totalCost);
 
 	const breakdownStr = `in:${inPct}% out:${outPct}% cw:${cwPct}% cr:${crPct}%`;
 	const parts = [breakdownStr];
@@ -306,13 +304,12 @@ export function renderStatuslineRaw(data: RawStatuslineData): string {
 	line1Parts.push(colors.gray(formatPath(data.path, PATH_MODE)));
 
 	const isSonnet = data.modelName.toLowerCase().includes("sonnet");
+	void isSonnet; // kept for potential future model-based filtering
 	let modelDisplay = colors.peach(data.modelName);
-	if (!isSonnet || true) { // always show model
-		if (data.contextWindowSize) {
-			modelDisplay += ` ${colors.gray(`(${formatContextWindowSize(data.contextWindowSize)} context)`)}`;
-		}
-		line1Parts.push(modelDisplay);
+	if (data.contextWindowSize) {
+		modelDisplay += ` ${colors.gray(`(${formatContextWindowSize(data.contextWindowSize)} context)`)}`;
 	}
+	line1Parts.push(modelDisplay);
 
 	sections.push(line1Parts.join(` ${sep} `));
 
