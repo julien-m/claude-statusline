@@ -173,15 +173,11 @@ async function main() {
 			weekCost = getWeekCost(usageLimits.seven_day.resets_at);
 		}
 
-		// Token breakdown — fetch from DB and check freshness
-		const STALE_THRESHOLD_MS = 3 * 60 * 1000; // 3 min = 3× cron interval
+		// Token breakdown — always show last known data if available
 		const today = new Date().toISOString().slice(0, 10); // UTC — consistent with sessions table and ccusage
 		let tokenBreakdown: TokenBreakdownData | null = null;
 		if (getDailyTokens && config.tokenBreakdown?.enabled) {
-			const rawTokens = getDailyTokens(today);
-			if (rawTokens && Date.now() - new Date(rawTokens.updatedAt).getTime() < STALE_THRESHOLD_MS) {
-				tokenBreakdown = rawTokens;
-			}
+			tokenBreakdown = getDailyTokens(today);
 		}
 
 		const data: StatuslineData = {
