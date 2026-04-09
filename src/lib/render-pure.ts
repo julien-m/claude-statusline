@@ -224,6 +224,13 @@ function formatSessionPart(
 	return `${colors.gray("S:")} ${items.join(sep)}`;
 }
 
+function colorForUsagePct(pct: number): (text: string | number) => string {
+	if (pct < 45) return colors.green;
+	if (pct < 60) return colors.yellow;
+	if (pct < 80) return colors.orange;
+	return colors.red;
+}
+
 function formatLimitsPart(
 	fiveHour: UsageLimit | null,
 	periodCost: number,
@@ -253,8 +260,9 @@ function formatLimitsPart(
 		}
 
 		if (config.percentage.showValue) {
+			const pctColor = colorForUsagePct(fiveHour.utilization);
 			parts.push(
-				`${colors.lightGray(fiveHour.utilization.toString())}${colors.gray("%")}`,
+				`${pctColor(fiveHour.utilization.toString())}${colors.gray("%")}`,
 			);
 		}
 	}
@@ -273,7 +281,7 @@ function formatLimitsPart(
 		parts.push(colors.gray(`(${formatResetTime(fiveHour.resets_at)})`));
 	}
 
-	return parts.length > 0 ? `${colors.gray("L:")} ${parts.join(" ")}` : "";
+	return parts.length > 0 ? `${colors.gray("5h")} ${parts.join(" ")}` : "";
 }
 
 function shouldShowWeekly(
@@ -360,8 +368,9 @@ function formatWeeklyPart(
 		}
 
 		if (config.percentage.showValue) {
+			const pctColor = colorForUsagePct(sevenDay.utilization);
 			parts.push(
-				`${colors.lightGray(sevenDay.utilization.toString())}${colors.gray("%")}`,
+				`${pctColor(sevenDay.utilization.toString())}${colors.gray("%")}`,
 			);
 		}
 	}
@@ -380,7 +389,7 @@ function formatWeeklyPart(
 		parts.push(colors.gray(`(${formatResetTime(sevenDay.resets_at)})`));
 	}
 
-	return parts.length > 0 ? `${colors.gray("W:")} ${parts.join(" ")}` : "";
+	return parts.length > 0 ? `${colors.gray("7d")} ${parts.join(" ")}` : "";
 }
 
 function formatDailyPart(
