@@ -75,5 +75,8 @@
   },
   "dailySpend": {
     "cost": { "enabled": true, "format": "decimal1" }
+  },
+  "tokenBreakdown": {
+    "enabled": true
   }
 }

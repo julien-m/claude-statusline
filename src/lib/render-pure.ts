@@ -41,6 +41,18 @@ export interface UsageLimit {
 	resets_at: string | null;
 }
 
+export interface TokenBreakdownData {
+	inputTokens: number;
+	outputTokens: number;
+	cacheCreationTokens: number;
+	cacheReadTokens: number;
+	blockCost: number;
+	blockRemainingMin: number;
+	blockProjectionCost: number;
+	burnRatePerHour: number;
+	totalCost: number;
+}
+
 export interface RawStatuslineData {
 	git: RawGitData | null;
 	path: string;
@@ -57,6 +69,7 @@ export interface RawStatuslineData {
 	periodCost?: number;
 	todayCost?: number;
 	weekCost?: number;
+	tokenBreakdown?: TokenBreakdownData | null;
 }
 
 // Legacy interface for backwards compatibility
@@ -377,6 +390,62 @@ function formatDailyPart(
 	return `${colors.gray("D:")} ${colors.gray("$")}${colors.dimWhite(formatCost(todayCost, config.cost.format))}`;
 }
 
+function formatTokenBreakdownPart(
+	data: TokenBreakdownData | null | undefined,
+	config: StatuslineConfig["tokenBreakdown"],
+): string {
+	if (!config?.enabled || !data || data.totalCost <= 0) return "";
+
+	const TOKEN_PRICES = {
+		input: 3,
+		output: 15,
+		cacheWrite: 3.75,
+		cacheRead: 0.30,
+	} as const;
+
+	function tokenCostPct(
+		tokens: number,
+		pricePerMTok: number,
+		totalCost: number,
+	): number {
+		if (totalCost <= 0) return 0;
+		return Math.round(
+			((tokens * pricePerMTok) / 1_000_000 / totalCost) * 100,
+		);
+	}
+
+	const inPct = tokenCostPct(
+		data.inputTokens,
+		TOKEN_PRICES.input,
+		data.totalCost,
+	);
+	const outPct = tokenCostPct(
+		data.outputTokens,
+		TOKEN_PRICES.output,
+		data.totalCost,
+	);
+	const cwPct = tokenCostPct(
+		data.cacheCreationTokens,
+		TOKEN_PRICES.cacheWrite,
+		data.totalCost,
+	);
+	const crPct = tokenCostPct(
+		data.cacheReadTokens,
+		TOKEN_PRICES.cacheRead,
+		data.totalCost,
+	);
+
+	const breakdownStr = `in:${inPct}% out:${outPct}% cw:${cwPct}% cr:${crPct}%`;
+	const parts = [breakdownStr];
+
+	if (data.burnRatePerHour > 0) {
+		const burnStr = `🔥 $${data.burnRatePerHour.toFixed(1)}/h → $${data.blockProjectionCost.toFixed(0)} (${formatDuration(data.blockRemainingMin * 60_000)})`;
+		parts.push(burnStr);
+	}
+
+	return `${colors.gray("T:")} ${parts.join(` ${colors.gray("·")} `)}`;
+}
+
 // ─────────────────────────────────────────────────────────────
 // MAIN RENDER FUNCTION - Raw data + config = output
 // ─────────────────────────────────────────────────────────────
@@ -439,6 +508,13 @@ export function renderStatuslineRaw(
 	// Daily
 	const dailyPart = formatDailyPart(data.todayCost ?? 0, config.dailySpend);
 	if (dailyPart) sections.push(dailyPart);
+
+	// Token breakdown
+	const tokenBreakdownPart = formatTokenBreakdownPart(
+		data.tokenBreakdown,
+		config.tokenBreakdown,
+	);
+	if (tokenBreakdownPart) sections.push(tokenBreakdownPart);
 
 	const output = sections.join(` ${sep} `);
 

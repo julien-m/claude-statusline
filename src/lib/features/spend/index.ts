@@ -3,6 +3,20 @@ import { existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import type { HookInput } from "../../types";
 
+export interface DailyTokensRow {
+	date: string;
+	inputTokens: number;
+	outputTokens: number;
+	cacheCreationTokens: number;
+	cacheReadTokens: number;
+	blockCost: number;
+	blockRemainingMin: number;
+	blockProjectionCost: number;
+	burnRatePerHour: number;
+	totalCost: number;
+	updatedAt: string;
+}
+
 const DATA_DIR = join(import.meta.dir, "..", "..", "..", "..", "data");
 const DB_PATH = join(DATA_DIR, "spend.db");
 
@@ -50,6 +64,22 @@ export function getDb(): Database {
 			total_cost REAL NOT NULL DEFAULT 0,
 			utilization INTEGER NOT NULL DEFAULT 0,
 			date TEXT NOT NULL
+		)
+	`);
+
+	_db.run(`
+		CREATE TABLE IF NOT EXISTS daily_tokens (
+			date                   TEXT PRIMARY KEY,
+			input_tokens           INTEGER NOT NULL DEFAULT 0,
+			output_tokens          INTEGER NOT NULL DEFAULT 0,
+			cache_creation_tokens  INTEGER NOT NULL DEFAULT 0,
+			cache_read_tokens      INTEGER NOT NULL DEFAULT 0,
+			block_cost             REAL NOT NULL DEFAULT 0,
+			block_remaining_min    INTEGER NOT NULL DEFAULT 0,
+			block_projection_cost  REAL NOT NULL DEFAULT 0,
+			burn_rate_per_hour     REAL NOT NULL DEFAULT 0,
+			total_cost             REAL NOT NULL DEFAULT 0,
+			updated_at             TEXT NOT NULL
 		)
 	`);
 
@@ -194,5 +224,90 @@ export function getTodayCostV2(): number {
 		return result?.total ?? 0;
 	} catch {
 		return 0;
+	}
+}
+
+export function upsertDailyTokens(row: DailyTokensRow): void {
+	try {
+		const db = getDb();
+		db.run(
+			`INSERT INTO daily_tokens (
+				date, input_tokens, output_tokens, cache_creation_tokens, cache_read_tokens,
+				block_cost, block_remaining_min, block_projection_cost, burn_rate_per_hour,
+				total_cost, updated_at
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			ON CONFLICT(date) DO UPDATE SET
+				input_tokens = excluded.input_tokens,
+				output_tokens = excluded.output_tokens,
+				cache_creation_tokens = excluded.cache_creation_tokens,
+				cache_read_tokens = excluded.cache_read_tokens,
+				block_cost = excluded.block_cost,
+				block_remaining_min = excluded.block_remaining_min,
+				block_projection_cost = excluded.block_projection_cost,
+				burn_rate_per_hour = excluded.burn_rate_per_hour,
+				total_cost = excluded.total_cost,
+				updated_at = excluded.updated_at`,
+			[
+				row.date,
+				row.inputTokens,
+				row.outputTokens,
+				row.cacheCreationTokens,
+				row.cacheReadTokens,
+				row.blockCost,
+				row.blockRemainingMin,
+				row.blockProjectionCost,
+				row.burnRatePerHour,
+				row.totalCost,
+				row.updatedAt,
+			],
+		);
+	} catch {
+		// Fail silently - don't break the statusline
+	}
+}
+
+export function getDailyTokens(date: string): DailyTokensRow | null {
+	try {
+		const db = getDb();
+		const result = db
+			.query<
+				{
+					date: string;
+					input_tokens: number;
+					output_tokens: number;
+					cache_creation_tokens: number;
+					cache_read_tokens: number;
+					block_cost: number;
+					block_remaining_min: number;
+					block_projection_cost: number;
+					burn_rate_per_hour: number;
+					total_cost: number;
+					updated_at: string;
+				},
+				[string]
+			>(
+				"SELECT date, input_tokens, output_tokens, cache_creation_tokens, cache_read_tokens, block_cost, block_remaining_min, block_projection_cost, burn_rate_per_hour, total_cost, updated_at FROM daily_tokens WHERE date = ?",
+			)
+			.get(date);
+
+		if (!result) {
+			return null;
+		}
+
+		return {
+			date: result.date,
+			inputTokens: result.input_tokens,
+			outputTokens: result.output_tokens,
+			cacheCreationTokens: result.cache_creation_tokens,
+			cacheReadTokens: result.cache_read_tokens,
+			blockCost: result.block_cost,
+			blockRemainingMin: result.block_remaining_min,
+			blockProjectionCost: result.block_projection_cost,
+			burnRatePerHour: result.burn_rate_per_hour,
+			totalCost: result.total_cost,
+			updatedAt: result.updated_at,
+		};
+	} catch {
+		return null;
 	}
 }
