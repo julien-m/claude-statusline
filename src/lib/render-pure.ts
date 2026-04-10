@@ -145,6 +145,10 @@ function formatGitPart(git: RawGitData | null): string {
 	return parts.join(" ");
 }
 
+function formatNumeric(value: number): string {
+	return parseFloat(value.toFixed(2)).toString();
+}
+
 function colorForUsagePct(pct: number): (text: string | number) => string {
 	if (pct < 45) return colors.green;
 	if (pct < 60) return colors.yellow;
@@ -217,7 +221,7 @@ function formatQuotasGroup(
 
 	if (fiveHour) {
 		const pctColor = colorForUsagePct(fiveHour.utilization);
-		let seg = `${colors.gray("5h")} ${pctColor(fiveHour.utilization.toString())}${colors.gray("%")}`;
+		let seg = `${colors.gray("5h")} ${pctColor(formatNumeric(fiveHour.utilization))}${colors.gray("%")}`;
 		if (fiveHour.resets_at) {
 			seg += ` ${colors.gray(formatResetTime(fiveHour.resets_at))}`;
 		}
@@ -227,7 +231,7 @@ function formatQuotasGroup(
 	if (sevenDay) {
 		const pctColor = colorForUsagePct(sevenDay.utilization);
 		parts.push(
-			`${colors.gray("7d")} ${pctColor(sevenDay.utilization.toString())}${colors.gray("%")}`,
+			`${colors.gray("7d")} ${pctColor(formatNumeric(sevenDay.utilization))}${colors.gray("%")}`,
 		);
 	}
 
