@@ -184,11 +184,9 @@ function formatMoneyGroup(
 ): string {
 	const parts: string[] = [];
 
-	if (todayCost > 0) {
-		parts.push(
-			`${colors.gray("D")} ${colors.gray("$")}${colors.dimWhite(formatCost(todayCost, COST_FORMAT))}`,
-		);
-	}
+	parts.push(
+		`${colors.gray("D")} ${colors.gray("$")}${colors.dimWhite(formatCost(todayCost, COST_FORMAT))}`,
+	);
 	if (weekCost > 0) {
 		parts.push(
 			`${colors.gray("W")} ${colors.gray("$")}${colors.dimWhite(formatCost(weekCost, COST_FORMAT))}`,

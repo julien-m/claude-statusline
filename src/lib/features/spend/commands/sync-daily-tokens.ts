@@ -47,7 +47,7 @@ function isCcusageBlocksResponse(data: unknown): data is CcusageBlocksResponse {
 }
 
 async function runCcusage(args: string[]): Promise<unknown> {
-	const proc = Bun.spawn(["ccusage", ...args], {
+	const proc = Bun.spawn(["/opt/homebrew/bin/ccusage", ...args], {
 		stdout: "pipe",
 	});
 
@@ -121,4 +121,7 @@ async function main(): Promise<void> {
 	upsertDailyTokens(row);
 }
 
-main().catch(() => process.exit(0));
+main().catch((err) => {
+	process.stderr.write(`sync-daily-tokens error: ${err}\n`);
+	process.exit(0);
+});
