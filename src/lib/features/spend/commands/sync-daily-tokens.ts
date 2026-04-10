@@ -47,7 +47,7 @@ function isCcusageBlocksResponse(data: unknown): data is CcusageBlocksResponse {
 }
 
 async function runCcusage(args: string[]): Promise<unknown> {
-	const proc = Bun.spawn(["/opt/homebrew/bin/ccusage", ...args], {
+	const proc = Bun.spawn(["/opt/homebrew/bin/bun", "/opt/homebrew/bin/ccusage", ...args], {
 		stdout: "pipe",
 	});
 

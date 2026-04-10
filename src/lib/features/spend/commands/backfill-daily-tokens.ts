@@ -36,7 +36,7 @@ async function main(): Promise<void> {
 	console.log(`Backfilling daily_tokens from ${since} to ${until}...`);
 
 	const proc = Bun.spawn(
-		["/opt/homebrew/bin/ccusage", "daily", "--since", since, "--until", until, "--json", "--offline"],
+		["/opt/homebrew/bin/bun", "/opt/homebrew/bin/ccusage", "daily", "--since", since, "--until", until, "--json", "--offline"],
 		{ stdout: "pipe" },
 	);
 
