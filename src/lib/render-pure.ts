@@ -23,7 +23,7 @@ const PATH_MODE = "truncated" as const;
 const COST_FORMAT = "decimal1" as const;
 const MAX_CONTEXT_TOKENS = 200000;
 
-const TOKEN_PRICES = {
+export const TOKEN_PRICES = {
 	input: 3,
 	output: 15,
 	cacheWrite: 3.75,
