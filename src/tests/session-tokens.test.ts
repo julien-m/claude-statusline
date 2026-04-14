@@ -75,4 +75,13 @@ describe("Session Token Breakdown Table", () => {
 		expect(getSessionTokenBreakdown("session-a")?.totalCost).toBeCloseTo(0.01);
 		expect(getSessionTokenBreakdown("session-b")?.totalCost).toBeCloseTo(0.02);
 	});
+
+	test("get maps all column names to camelCase correctly", () => {
+		upsertSessionTokenBreakdown(
+			buildRow({ cacheCreationTokens: 2000, cacheReadTokens: 50000 }),
+		);
+		const result = getSessionTokenBreakdown("test-session-123");
+		expect(result?.cacheCreationTokens).toBe(2000);
+		expect(result?.cacheReadTokens).toBe(50000);
+	});
 });
