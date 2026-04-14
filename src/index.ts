@@ -24,6 +24,8 @@ type GetPeriodCost = typeof import("./lib/features/spend").getPeriodCost;
 type GetWeekCost = typeof import("./lib/features/spend").getWeekCost;
 type SaveSessionV2 = typeof import("./lib/features/spend").saveSessionV2;
 type GetDailyTokens = typeof import("./lib/features/spend").getDailyTokens;
+type GetSessionTokenBreakdown =
+	typeof import("./lib/features/spend").getSessionTokenBreakdown;
 
 type UsageLimitsResult = {
 	five_hour: { utilization: number; resets_at: string | null } | null;
@@ -37,6 +39,7 @@ let getPeriodCost: GetPeriodCost | null = null;
 let getWeekCost: GetWeekCost | null = null;
 let saveSessionV2: SaveSessionV2 | null = null;
 let getDailyTokens: GetDailyTokens | null = null;
+let getSessionTokenBreakdown: GetSessionTokenBreakdown | null = null;
 
 function gitStatusToRawGit(git: GitStatus): RawGitData {
 	return {
@@ -67,6 +70,7 @@ try {
 	getWeekCost = spendModule.getWeekCost;
 	saveSessionV2 = spendModule.saveSessionV2;
 	getDailyTokens = spendModule.getDailyTokens;
+	getSessionTokenBreakdown = spendModule.getSessionTokenBreakdown;
 } catch {
 	// Spend tracking feature not available - that's OK!
 }
@@ -188,10 +192,29 @@ async function main() {
 			: null;
 		const todayCost = dailyData?.totalCost ?? 0;
 
-		// Token breakdown — session-based from current_usage, fallback to daily
+		// Token breakdown — priority: SQLite cumulative session > current_usage snapshot > daily
 		let tokenBreakdown: TokenBreakdownData | null = null;
+		const sessionData = getSessionTokenBreakdown
+			? getSessionTokenBreakdown(input.session_id)
+			: null;
 		const cu = input.context_window?.current_usage;
-		if (cu) {
+
+		if (sessionData) {
+			// Cumulative session totals from SQLite cache (stable, per-terminal)
+			// Session token fields: from SQLite; daily block fields: preserved from dailyData
+			tokenBreakdown = {
+				inputTokens: sessionData.inputTokens,
+				outputTokens: sessionData.outputTokens,
+				cacheCreationTokens: sessionData.cacheCreationTokens,
+				cacheReadTokens: sessionData.cacheReadTokens,
+				totalCost: sessionData.totalCost,
+				burnRatePerHour: dailyData?.burnRatePerHour ?? 0,
+				blockCost: dailyData?.blockCost ?? 0,
+				blockRemainingMin: dailyData?.blockRemainingMin ?? 0,
+				blockProjectionCost: dailyData?.blockProjectionCost ?? 0,
+			};
+		} else if (cu) {
+			// Fallback: instantaneous snapshot (first ~60s of session or ccusage unavailable)
 			const computedCost =
 				(cu.input_tokens * TOKEN_PRICES.input +
 					cu.output_tokens * TOKEN_PRICES.output +
@@ -204,7 +227,6 @@ async function main() {
 				cacheCreationTokens: cu.cache_creation_input_tokens ?? 0,
 				cacheReadTokens: cu.cache_read_input_tokens ?? 0,
 				totalCost: computedCost,
-				// Daily fields — stale (last ccusage sync). Zero when sync not run today.
 				burnRatePerHour: dailyData?.burnRatePerHour ?? 0,
 				blockCost: dailyData?.blockCost ?? 0,
 				blockRemainingMin: dailyData?.blockRemainingMin ?? 0,
