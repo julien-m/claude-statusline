@@ -183,7 +183,7 @@ async function main() {
 
 		// Daily data for D: cost, burn rate, block fields
 		const today = new Date().toISOString().slice(0, 10);
-		const dailyData: TokenBreakdownData | null = getDailyTokens
+		const dailyData: ReturnType<GetDailyTokens> = getDailyTokens
 			? getDailyTokens(today)
 			: null;
 		const todayCost = dailyData?.totalCost ?? 0;
