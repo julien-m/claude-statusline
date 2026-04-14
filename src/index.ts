@@ -12,6 +12,7 @@ import {
 	renderStatusline,
 	renderStatuslineRaw,
 	type StatuslineData,
+	TOKEN_PRICES,
 	type TokenBreakdownData,
 	type UsageLimit,
 } from "./lib/render-pure";
@@ -180,15 +181,38 @@ async function main() {
 			weekCost = getWeekCost(usageLimits.seven_day.resets_at);
 		}
 
-		// Token breakdown — always show last known data if available
+		// Daily data for D: cost, burn rate, block fields
 		const today = new Date().toISOString().slice(0, 10);
-		let tokenBreakdown: TokenBreakdownData | null = null;
-		if (getDailyTokens) {
-			tokenBreakdown = getDailyTokens(today);
-		}
+		const dailyData: TokenBreakdownData | null = getDailyTokens
+			? getDailyTokens(today)
+			: null;
+		const todayCost = dailyData?.totalCost ?? 0;
 
-		// Daily cost from ccusage
-		const todayCost = tokenBreakdown?.totalCost ?? 0;
+		// Token breakdown — session-based from current_usage, fallback to daily
+		let tokenBreakdown: TokenBreakdownData | null = null;
+		const cu = input.context_window?.current_usage;
+		if (cu) {
+			const computedCost =
+				(cu.input_tokens * TOKEN_PRICES.input +
+					cu.output_tokens * TOKEN_PRICES.output +
+					(cu.cache_creation_input_tokens ?? 0) * TOKEN_PRICES.cacheWrite +
+					(cu.cache_read_input_tokens ?? 0) * TOKEN_PRICES.cacheRead) /
+				1_000_000;
+			tokenBreakdown = {
+				inputTokens: cu.input_tokens,
+				outputTokens: cu.output_tokens,
+				cacheCreationTokens: cu.cache_creation_input_tokens ?? 0,
+				cacheReadTokens: cu.cache_read_input_tokens ?? 0,
+				totalCost: computedCost,
+				// Daily fields — stale (last ccusage sync). Zero when sync not run today.
+				burnRatePerHour: dailyData?.burnRatePerHour ?? 0,
+				blockCost: dailyData?.blockCost ?? 0,
+				blockRemainingMin: dailyData?.blockRemainingMin ?? 0,
+				blockProjectionCost: dailyData?.blockProjectionCost ?? 0,
+			};
+		} else {
+			tokenBreakdown = dailyData;
+		}
 
 		const data: RawStatuslineData = {
 			git: gitStatusToRawGit(git),
@@ -218,7 +242,7 @@ async function main() {
 			...(getPeriodCost && { periodCost }),
 			todayCost,
 			...(getWeekCost && { weekCost }),
-			...(getDailyTokens && { tokenBreakdown }),
+			tokenBreakdown,
 		};
 
 		const output = renderStatuslineRaw(data);
