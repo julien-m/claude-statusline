@@ -17,6 +17,16 @@ export interface DailyTokensRow {
 	updatedAt: string;
 }
 
+export interface SessionTokenRow {
+	sessionId: string;
+	inputTokens: number;
+	outputTokens: number;
+	cacheCreationTokens: number;
+	cacheReadTokens: number;
+	totalCost: number;
+	// updatedAt intentionally excluded — internal sync timestamp, callers don't need it
+}
+
 // data/ is at project root: src/lib/features/spend/ is 4 levels deep → ../../../../data/
 const DATA_DIR = join(import.meta.dir, "..", "..", "..", "..", "data");
 const DB_PATH = join(DATA_DIR, "spend.db");
@@ -81,6 +91,18 @@ export function getDb(): Database {
 			burn_rate_per_hour     REAL NOT NULL DEFAULT 0,
 			total_cost             REAL NOT NULL DEFAULT 0,
 			updated_at             TEXT NOT NULL
+		)
+	`);
+
+	_db.run(`
+		CREATE TABLE IF NOT EXISTS session_token_breakdown (
+			session_id            TEXT PRIMARY KEY,
+			input_tokens          INTEGER NOT NULL DEFAULT 0,
+			output_tokens         INTEGER NOT NULL DEFAULT 0,
+			cache_creation_tokens INTEGER NOT NULL DEFAULT 0,
+			cache_read_tokens     INTEGER NOT NULL DEFAULT 0,
+			total_cost            REAL NOT NULL DEFAULT 0,
+			updated_at            TEXT NOT NULL
 		)
 	`);
 
@@ -280,6 +302,70 @@ export function upsertDailyTokens(row: DailyTokensRow): void {
 		);
 	} catch {
 		// Fail silently - don't break the statusline
+	}
+}
+
+export function upsertSessionTokenBreakdown(row: SessionTokenRow): void {
+	try {
+		const db = getDb();
+		db.run(
+			`INSERT INTO session_token_breakdown (
+				session_id, input_tokens, output_tokens, cache_creation_tokens,
+				cache_read_tokens, total_cost, updated_at
+			) VALUES (?, ?, ?, ?, ?, ?, ?)
+			ON CONFLICT(session_id) DO UPDATE SET
+				input_tokens = excluded.input_tokens,
+				output_tokens = excluded.output_tokens,
+				cache_creation_tokens = excluded.cache_creation_tokens,
+				cache_read_tokens = excluded.cache_read_tokens,
+				total_cost = excluded.total_cost,
+				updated_at = excluded.updated_at`,
+			[
+				row.sessionId,
+				row.inputTokens,
+				row.outputTokens,
+				row.cacheCreationTokens,
+				row.cacheReadTokens,
+				row.totalCost,
+				new Date().toISOString(),
+			],
+		);
+	} catch {
+		// Fail silently
+	}
+}
+
+export function getSessionTokenBreakdown(
+	sessionId: string,
+): SessionTokenRow | null {
+	try {
+		const db = getDb();
+		const result = db
+			.query<
+				{
+					session_id: string;
+					input_tokens: number;
+					output_tokens: number;
+					cache_creation_tokens: number;
+					cache_read_tokens: number;
+					total_cost: number;
+				},
+				[string]
+			>(
+				"SELECT session_id, input_tokens, output_tokens, cache_creation_tokens, cache_read_tokens, total_cost FROM session_token_breakdown WHERE session_id = ?",
+			)
+			.get(sessionId);
+		if (!result) return null;
+		return {
+			sessionId: result.session_id,
+			inputTokens: result.input_tokens,
+			outputTokens: result.output_tokens,
+			cacheCreationTokens: result.cache_creation_tokens,
+			cacheReadTokens: result.cache_read_tokens,
+			totalCost: result.total_cost,
+		};
+	} catch {
+		return null;
 	}
 }
 
