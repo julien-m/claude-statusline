@@ -46,19 +46,49 @@ function isCcusageBlocksResponse(data: unknown): data is CcusageBlocksResponse {
 	);
 }
 
+type SpawnedProcess = ReturnType<typeof Bun.spawn>;
+const activeChildren: SpawnedProcess[] = [];
+
+function cleanupChildren() {
+	for (const child of activeChildren) {
+		try {
+			child.kill();
+		} catch {}
+	}
+	activeChildren.length = 0;
+}
+
+process.on("SIGTERM", () => {
+	cleanupChildren();
+	process.exit(143);
+});
+process.on("SIGINT", () => {
+	cleanupChildren();
+	process.exit(130);
+});
+
 async function runCcusage(args: string[]): Promise<unknown> {
 	const proc = Bun.spawn(["/opt/homebrew/bin/bun", "/opt/homebrew/bin/ccusage", ...args], {
 		stdout: "pipe",
 	});
+	activeChildren.push(proc);
 
-	const text = await new Response(proc.stdout).text();
-	const exitCode = await proc.exited;
+	try {
+		const text = await new Response(proc.stdout).text();
+		const exitCode = await proc.exited;
 
-	if (exitCode !== 0) {
-		throw new Error(`ccusage exited with code ${exitCode}`);
+		if (exitCode !== 0) {
+			throw new Error(`ccusage exited with code ${exitCode}`);
+		}
+
+		return JSON.parse(text);
+	} finally {
+		const idx = activeChildren.indexOf(proc);
+		if (idx >= 0) activeChildren.splice(idx, 1);
+		try {
+			proc.kill();
+		} catch {}
 	}
-
-	return JSON.parse(text);
 }
 
 async function main(): Promise<void> {
