@@ -62,6 +62,7 @@ src/
                 ├── spend-month.ts    # CLI: monthly spend by date
                 ├── spend-project.ts  # CLI: spend grouped by project
                 ├── sync-daily-tokens.ts  # CLI: ccusage → daily_tokens upsert
+                ├── sync-session-tokens.ts  # CLI: ccusage → session_token_breakdown upsert
                 └── migrate-to-sqlite.ts  # CLI: migrate old JSON → SQLite
 ```
 
@@ -113,8 +114,9 @@ Claude Code Hook → stdin JSON → index.ts
 ### Spend / SQLite (`lib/features/spend/index.ts`)
 
 - **DB**: `data/spend.db` (WAL mode)
-- **Tables**: `sessions`, `session_period_tracking`, `periods`, `daily_tokens`
+- **Tables**: `sessions`, `session_period_tracking`, `periods`, `daily_tokens`, `session_token_breakdown`
 - **`daily_tokens`**: Upserted by `sync-daily-tokens.ts` — one row per day, updated in place
+- **`session_token_breakdown`**: Upserted by `sync-session-tokens.ts` — one row per active session, 24h TTL cleanup
 - **Singleton**: `getDb()` — use `setDb()` / `resetDb()` for test injection only
 
 ### Pure Renderer (`lib/render-pure.ts`)
@@ -164,6 +166,9 @@ bun src/lib/features/spend/commands/spend-month.ts
 
 # Sync ccusage → daily_tokens
 bun src/lib/features/spend/commands/sync-daily-tokens.ts
+
+# Sync ccusage → session_token_breakdown
+bun src/lib/features/spend/commands/sync-session-tokens.ts
 
 # Format / lint
 bunx biome format --write .

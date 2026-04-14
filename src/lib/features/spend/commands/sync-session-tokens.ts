@@ -123,6 +123,7 @@ async function findActiveSessionFiles(): Promise<string[]> {
 async function syncSession(filePath: string): Promise<void> {
 	const sessionId = basename(filePath, ".jsonl");
 	const raw = await runCcusage(["session", "-i", sessionId, "--json"]);
+	if (raw === null) return; // session not yet indexed by ccusage
 	if (!isCcusageSessionResponse(raw)) {
 		throw new Error(`Unexpected ccusage session response for ${sessionId}`);
 	}
@@ -163,5 +164,5 @@ async function main(): Promise<void> {
 
 main().catch((err) => {
 	process.stderr.write(`sync-session-tokens error: ${err}\n`);
-	process.exit(0);
+	process.exit(1);
 });
